@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if not uazapi_ok %}
+<div class="alert alert-warn">
+  ⚠ uazapi ainda não configurada — envios estão em <strong>modo simulado</strong>.
+  Preencha <code>UAZAPI_SUBDOMAIN</code> e <code>UAZAPI_TOKEN</code> no arquivo <code>.env</code> e reinicie o servidor.
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Fila do mês</h2>
+  <form method="get" action="/fila" class="filtros">
+    <label>Competência (vencimento):</label>
+    <select name="competencia">
+      {% for c in competencias_opcoes %}
+        <option value="{{ c.valor }}" {% if c.valor == competencia %}selected{% endif %}>{{ c.label }}</option>
+      {% endfor %}
+    </select>
+    <label>Obrigação:</label>
+    <input type="text" name="obrigacao" placeholder="FGTS, DARF, DAS..." value="{{ obrigacao or '' }}" style="width:160px">
+    <label>Cliente:</label>
+    <input type="text" name="cliente" placeholder="nome ou CNPJ" value="{{ cliente or '' }}" style="width:200px">
+    <label>Status:</label>
+    <select name="status" style="width:130px">
+      <option value="todas" {% if status_filtro == 'todas' %}selected{% endif %}>Todas</option>
+      <option value="pendentes" {% if status_filtro == 'pendentes' %}selected{% endif %}>Pendentes</option>
+      <option value="enviadas" {% if status_filtro == 'enviadas' %}selected{% endif %}>Enviadas</option>
+    </select>
+    {% if mostrar_ocultas %}<input type="hidden" name="mostrar_ocultas" value="1">{% endif %}
+    <button class="btn btn-primary" type="submit" onclick="document.getElementById('loading').style.display='inline'">Filtrar</button>
+    <button class="btn btn-secondary" type="submit" name="refresh" value="1" onclick="document.getElementById('loading').style.display='inline'">🔄 Forçar atualização</button>
+    <span id="loading" style="display:none;color:#888;font-size:13px">⏳ consultando G-Click...</span>
+  </form>
+
+  {% if qtd_ocultas_na_carga %}
+  <p style="font-size:12px;color:#666;margin:4px 0 14px">
+    {% if mostrar_ocultas %}
+      Mostrando {{ qtd_ocultas_na_carga }} guia(s) ocultas. <a href="/fila?competencia={{ competencia }}{% if obrigacao %}&obrigacao={{ obrigacao }}{% endif %}{% if cliente %}&cliente={{ cliente }}{% endif %}{% if status_filtro and status_filtro != 'todas' %}&status={{ status_filtro }}{% endif %}">esconder novamente</a>
+    {% else %}
+      🚫 {{ qtd_ocultas_na_carga }} guia(s) ocultas nesta carga. <a href="/fila?competencia={{ competencia }}&mostrar_ocultas=1{% if obrigacao %}&obrigacao={{ obrigacao }}{% endif %}{% if cliente %}&cliente={{ cliente }}{% endif %}{% if status_filtro and status_filtro != 'todas' %}&status={{ status_filtro }}{% endif %}">mostrar todas</a>
+    {% endif %}
+  </p>
+  {% endif %}
+
+  {% if sucesso %}<div class="alert alert-info">{{ sucesso }}</div>{% endif %}
+  {% if erro %}<div class="alert alert-warn">{{ erro }}</div>{% endif %}
+  {% if erro_carga %}
+    <div class="alert alert-warn">Erro ao consultar G-Click: {{ erro_carga }}</div>
+  {% endif %}
+
+  <form method="post" action="/enviar">
+    <input type="hidden" name="competencia" value="{{ competencia }}">
+    <input type="hidden" name="obrigacao" value="{{ obrigacao or '' }}">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:30px"><input type="checkbox" id="select-all" onclick="document.querySelectorAll('.row-chk:not([disabled])').forEach(c=>c.checked=this.checked)"></th>
+          <th>Cliente</th>
+          <th>Obrigação / Atividade</th>
+          <th>Vencimento</th>
+          <th>PDF</th>
+          <th>WhatsApp</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for g in guias %}
+        <tr>
+          <td>
+            {% if g.pode_enviar %}
+              <input type="checkbox" class="row-chk" name="chave" value="{{ g.chave }}">
+              <input type="hidden" class="row-meta" data-chave="{{ g.chave }}" data-cnpj="{{ g.cnpj }}">
+            {% else %}
+              <input type="checkbox" class="row-chk" disabled>
+            {% endif %}
+          </td>
+          <td>
+            <div>{{ g.cliente_apelido }}</div>
+            <div style="color:#888;font-size:12px">{{ g.cnpj }}</div>
+          </td>
+          <td>
+            <div>{{ g.obrigacao_nome }}</div>
+            <div style="color:#888;font-size:12px">{{ g.atividade_nome }}</div>
+            {% if g.eh_retificada %}
+              <div style="margin-top:4px">
+                <span class="badge" style="background:#fef3c7;color:#92400e" title="Existem {{ g.num_versoes }} versões deste documento. Mostrando apenas a mais recente ({{ g.respondida_em }}).">🔄 Retificada — {{ g.num_versoes }}ª versão</span>
+              </div>
+            {% endif %}
+          </td>
+          <td>{{ g.data_vencimento_fmt }}</td>
+          <td>
+            {% if g.tem_pdf %}
+              <a href="{{ g.arquivo_url }}" target="_blank" title="{{ g.arquivo_nome }}">📄</a>
+            {% else %}
+              <span class="badge badge-warn">sem anexo</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if g.whatsapp %}
+              <span class="badge badge-ok">{{ g.whatsapp_fmt }}</span>
+            {% else %}
+              <a href="/clientes?focus={{ g.cnpj }}" class="badge badge-falta" style="text-decoration:none">cadastrar</a>
+            {% endif %}
+          </td>
+          <td>
+            {% if g.ja_enviado %}
+              <span class="badge badge-ok">✅ enviado</span>
+            {% elif g.pode_enviar %}
+              <span class="badge badge-pend">⏳ pronto</span>
+            {% else %}
+              <span class="badge badge-falta">—</span>
+            {% endif %}
+          </td>
+          <td style="white-space:nowrap">
+            {% if g.pode_enviar %}
+              <button type="submit" name="chave_unica" value="{{ g.chave }}" class="btn btn-primary btn-sm">Enviar</button>
+            {% endif %}
+            {% if g.oculto %}
+              <button type="button" onclick="desocultar('{{ g.cnpj }}','{{ g.tarefa_id }}','{{ g.atividade_id }}')" class="btn btn-secondary btn-sm" title="Voltar a mostrar">👁</button>
+            {% else %}
+              <button type="button" onclick="ignorar('{{ g.cnpj }}','{{ g.chave }}')" class="btn btn-secondary btn-sm" title="Ignorar (esconder do nosso sistema, não toca no G-Click)">🚫</button>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" style="text-align:center;color:#888;padding:30px">Nenhuma guia para esta competência.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="toolbar">
+      <div class="resumo">
+        <strong>{{ pendentes }}</strong> pendente(s) · <strong>{{ enviadas }}</strong> enviada(s) · <strong>{{ total }}</strong> no total
+      </div>
+      <div>
+        <button class="btn btn-secondary" type="button" onclick="ocultarSelecionadas()" title="Esconde do nosso sistema (não toca no G-Click)">🚫 Ocultar selecionadas</button>
+        <button class="btn btn-secondary" type="submit" name="acao" value="lote">Enviar selecionadas</button>
+        <button class="btn btn-primary" type="submit" name="acao" value="todas" onclick="return confirm('Enviar TODAS as {{ prontas }} guias prontas?');">Enviar todas prontas</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Forms ocultos para os botões "Ignorar" / "Desocultar" — postados via JS -->
+<form id="form-ignorar" method="post" action="/ocultar" style="display:none">
+  <input type="hidden" name="cnpj">
+  <input type="hidden" name="chave">
+  <input type="hidden" name="competencia" value="{{ competencia }}">
+  <input type="hidden" name="motivo" value="Oculto manualmente pela fila">
+</form>
+<form id="form-desocultar" method="post" action="/desocultar" style="display:none">
+  <input type="hidden" name="cnpj">
+  <input type="hidden" name="tarefa_id">
+  <input type="hidden" name="atividade_id">
+  <input type="hidden" name="voltar" value="/fila?competencia={{ competencia }}{% if mostrar_ocultas %}&mostrar_ocultas=1{% endif %}{% if status_filtro and status_filtro != 'todas' %}&status={{ status_filtro }}{% endif %}{% if obrigacao %}&obrigacao={{ obrigacao }}{% endif %}{% if cliente %}&cliente={{ cliente }}{% endif %}">
+</form>
+<form id="form-ocultar-lote" method="post" action="/ocultar/lote" style="display:none">
+  <input type="hidden" name="competencia" value="{{ competencia }}">
+  <input type="hidden" name="motivo" value="Oculto em lote pela fila">
+  <!-- inputs com name="pares" são injetados pelo JS no clique -->
+</form>
+
+<script>
+function ignorar(cnpj, chave) {
+  if (!confirm("Esconder esta guia do nosso sistema?\n(A tarefa no G-Click NÃO é apagada.)")) return;
+  const f = document.getElementById('form-ignorar');
+  f.cnpj.value = cnpj; f.chave.value = chave;
+  f.submit();
+}
+function desocultar(cnpj, tarefa_id, atividade_id) {
+  const f = document.getElementById('form-desocultar');
+  f.cnpj.value = cnpj; f.tarefa_id.value = tarefa_id; f.atividade_id.value = atividade_id;
+  f.submit();
+}
+function ocultarSelecionadas() {
+  const marcados = Array.from(document.querySelectorAll('.row-chk:checked'));
+  if (!marcados.length) {
+    alert('Marque pelo menos uma guia.');
+    return;
+  }
+  if (!confirm('Ocultar ' + marcados.length + ' guia(s) do nosso sistema?\n(As tarefas no G-Click NÃO são apagadas.)')) return;
+  const f = document.getElementById('form-ocultar-lote');
+  // Limpa pares de um clique anterior
+  f.querySelectorAll('input[name="pares"]').forEach(n => n.remove());
+  marcados.forEach(chk => {
+    // Acha o hidden irmão com o mesmo data-chave para descobrir o cnpj
+    const meta = chk.parentElement.querySelector('input[data-chave="' + chk.value + '"]');
+    const cnpj = meta ? meta.getAttribute('data-cnpj') : '';
+    if (!cnpj) return;
+    const inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'pares';
+    inp.value = cnpj + '|' + chk.value;
+    f.appendChild(inp);
+  });
+  if (!f.querySelectorAll('input[name="pares"]').length) {
+    alert('Não consegui identificar o CNPJ das guias marcadas. Recarregue a página e tente de novo.');
+    return;
+  }
+  f.submit();
+}
+</script>
+
+{% endblock %}

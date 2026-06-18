@@ -1,0 +1,31 @@
+# Dados e segredos NUNCA vão para a imagem (vêm do volume / env vars do EasyPanel)
+.env
+.env.local
+data/
+*.db
+*.db-wal
+*.db-shm
+dados.db*
+_backup_docs_*/
+secure/
+API GLICK.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Dev / IDE / docs (não precisam na imagem de produção)
+.vscode/
+.idea/
+.git/
+.gitignore
+tests/
+scripts/
+docs/
+*.md
+*.log
+*.tmp
+*.temp

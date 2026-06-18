@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" style="max-width:780px">
+  <h2>⚙ Configurações</h2>
+  <p class="resumo">Valores salvos aqui persistem no banco e sobrepõem o <code>.env</code> — sem reiniciar.</p>
+
+  {% if sucesso %}<div class="alert alert-info">{{ sucesso }}</div>{% endif %}
+  {% if erro %}<div class="alert alert-warn">{{ erro }}</div>{% endif %}
+
+  {% if diag %}
+    {% if diag.ok %}
+      <div class="alert alert-info" style="background:#def7ec;color:#03543f;border-left:4px solid #22c55e">
+        🩺 <strong>Conexão OK:</strong> {{ diag.mensagem }}
+      </div>
+    {% else %}
+      <div class="alert alert-warn" style="background:#fff5f5;border-left:4px solid #cf3a3a;color:#9b1c1c">
+        🩺 <strong>Conexão com problema ({{ diag.categoria }}):</strong> {{ diag.mensagem }}
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <!-- ============== G-Click (API) ============== -->
+  <h3 style="font-size:15px;margin:8px 0 12px">🔑 G-Click (API)</h3>
+  <form method="post" action="/configuracoes/gclick">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <label style="font-size:13px;color:#555">Client ID</label>
+        <div style="position:relative">
+          <input type="password" id="gc_id" name="client_id" value="{{ gclick_client_id }}"
+                 placeholder="client_id do painel Omie"
+                 style="width:100%;padding:8px 38px 8px 8px;border:1px solid #d1d5da;border-radius:4px;font-family:monospace">
+          <button type="button" onclick="olho('gc_id', this)" title="Mostrar/ocultar"
+                  style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;font-size:15px">👁</button>
+        </div>
+        <small style="color:#888">origem: {{ gc_id_origem }}</small>
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">Client Secret</label>
+        <div style="position:relative">
+          <input type="password" id="gc_sec" name="client_secret" value="{{ gclick_client_secret }}"
+                 placeholder="client_secret do painel Omie"
+                 style="width:100%;padding:8px 38px 8px 8px;border:1px solid #d1d5da;border-radius:4px;font-family:monospace">
+          <button type="button" onclick="olho('gc_sec', this)" title="Mostrar/ocultar"
+                  style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;font-size:15px">👁</button>
+        </div>
+        <small style="color:#888">origem: {{ gc_sec_origem }}</small>
+      </div>
+    </div>
+    <div style="margin-top:14px"><button class="btn btn-primary" type="submit">💾 Salvar G-Click</button></div>
+  </form>
+  <div style="margin-top:12px;padding-top:12px;border-top:1px solid #eaecef">
+    {% for campo, rotulo in [('gclick_client_id','↺ Client ID'),('gclick_client_secret','↺ Client Secret')] %}
+    <form method="post" action="/configuracoes/gclick/limpar" style="display:inline-block;margin-right:8px">
+      <input type="hidden" name="campo" value="{{ campo }}">
+      <button class="btn btn-secondary btn-sm" type="submit"
+              onclick="return confirm('Restaurar este campo ao valor do .env?');">{{ rotulo }}</button>
+    </form>
+    {% endfor %}
+  </div>
+
+  <!-- ============== uazapi ============== -->
+  <h3 style="font-size:15px;margin:28px 0 12px">📲 uazapi (envio WhatsApp)</h3>
+
+  <form method="post" action="/configuracoes/uazapi">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <label style="font-size:13px;color:#555">Subdomain</label>
+        <input type="text" name="subdomain" value="{{ subdomain_atual }}"
+               placeholder="free"
+               style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px;font-family:monospace">
+        <small style="color:#888">
+          Atual: <code>{{ subdomain_atual or '(vazio)' }}</code> · origem: {{ sub_origem }}
+          {% if sub_atualizado_em %}· atualizado em {{ sub_atualizado_em }} por {{ sub_atualizado_por }}{% endif %}
+        </small>
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">Instance Token</label>
+        <div style="position:relative">
+          <input type="password" id="uz_tok" name="token" value="{{ token_atual }}"
+                 placeholder="cole o token aqui"
+                 style="width:100%;padding:8px 38px 8px 8px;border:1px solid #d1d5da;border-radius:4px;font-family:monospace">
+          <button type="button" onclick="olho('uz_tok', this)" title="Mostrar/ocultar"
+                  style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:0;cursor:pointer;font-size:15px">👁</button>
+        </div>
+        <small style="color:#888">
+          origem: {{ tok_origem }}
+          {% if tok_atualizado_em %}· atualizado em {{ tok_atualizado_em }} por {{ tok_atualizado_por }}{% endif %}
+        </small>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+      <button class="btn btn-primary" type="submit">💾 Salvar</button>
+      <label style="font-size:13px;color:#555;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" name="testar" value="1"> Testar conexão após salvar
+      </label>
+    </div>
+  </form>
+
+  <div style="margin-top:24px;padding-top:18px;border-top:1px solid #eaecef">
+    <h4 style="font-size:13px;color:#555;margin:0 0 8px">Restaurar do .env</h4>
+    <form method="post" action="/configuracoes/uazapi/limpar" style="display:inline-block;margin-right:8px">
+      <input type="hidden" name="campo" value="uazapi_subdomain">
+      <button class="btn btn-secondary btn-sm" type="submit"
+              onclick="return confirm('Voltar o subdomain ao valor do .env?');">↺ Subdomain</button>
+    </form>
+    <form method="post" action="/configuracoes/uazapi/limpar" style="display:inline-block">
+      <input type="hidden" name="campo" value="uazapi_token">
+      <button class="btn btn-secondary btn-sm" type="submit"
+              onclick="return confirm('Voltar o token ao valor do .env?');">↺ Token</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============== Modo de envio (anexo ou link) ============== -->
+<div class="card" style="max-width:780px;margin-top:20px">
+  <h2>📤 Modo de envio</h2>
+
+  <form method="post" action="/configuracoes/modo-envio">
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <label style="display:flex;align-items:center;gap:8px;padding:12px;border:1px solid #d1d5da;border-radius:8px;cursor:pointer;min-width:200px{% if throttle.modo_envio == 'anexo' %};border-color:#22c55e;background:#f0fdf4{% endif %}">
+        <input type="radio" name="modo_envio" value="anexo"
+               {% if throttle.modo_envio == 'anexo' %}checked{% endif %}
+               onchange="this.form.submit()">
+        <div>
+          <strong>📎 Anexo (PDF)</strong>
+          <div style="font-size:12px;color:#666">Envia o arquivo PDF diretamente</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:12px;border:1px solid #d1d5da;border-radius:8px;cursor:pointer;min-width:200px{% if throttle.modo_envio == 'link' %};border-color:#3b82f6;background:#eff6ff{% endif %}">
+        <input type="radio" name="modo_envio" value="link"
+               {% if throttle.modo_envio == 'link' %}checked{% endif %}
+               onchange="this.form.submit()">
+        <div>
+          <strong>🔗 Link (hyperlink)</strong>
+          <div style="font-size:12px;color:#666">Envia texto com link clicável para o PDF</div>
+        </div>
+      </label>
+    </div>
+  </form>
+
+  <p style="font-size:12px;color:#92400e;margin-top:12px">
+    ⚠ Modo Link usa botão de URL — visível apenas no app do celular, não no WhatsApp Web.
+  </p>
+</div>
+
+<!-- ============== Ritmo de envio (anti-bloqueio do número) ============== -->
+<div class="card" style="max-width:780px">
+  <h2>🐌 Ritmo de envio (anti-bloqueio)</h2>
+
+  <form method="post" action="/configuracoes/throttle">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+      <div>
+        <label style="font-size:13px;color:#555">Pausa entre envios (s)</label>
+        <input type="number" name="throttle_s" step="0.1" min="0"
+               value="{{ '%g' % throttle.throttle_s }}"
+               style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+        <small style="color:#888">
+          Atual: <code>{{ '%g' % throttle.throttle_s }} s</code> · origem: {{ throttle_origem.throttle_s }}
+        </small>
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">Máximo por hora</label>
+        <input type="number" name="max_por_hora" min="1"
+               value="{{ throttle.max_por_hora }}"
+               style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+        <small style="color:#888">
+          Atual: <code>{{ throttle.max_por_hora }}/h</code> · origem: {{ throttle_origem.max_por_hora }}
+        </small>
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">"Digitando…" antes (ms)</label>
+        <input type="number" name="delay_uazapi_ms" min="0" step="100"
+               value="{{ throttle.delay_uazapi_ms }}"
+               style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+        <small style="color:#888">
+          Atual: <code>{{ throttle.delay_uazapi_ms }} ms</code> · origem: {{ throttle_origem.delay_uazapi_ms }}
+        </small>
+      </div>
+    </div>
+
+    <p style="font-size:12px;color:#888;margin:12px 0 0">
+      Teto/hora usa janela deslizante: ao estourar, envios viram <code>bloqueado</code> na auditoria.
+    </p>
+
+    <div style="margin-top:14px;display:flex;gap:10px">
+      <button class="btn btn-primary" type="submit">💾 Salvar ritmo</button>
+    </div>
+  </form>
+
+  <div style="margin-top:20px;padding-top:14px;border-top:1px solid #eaecef">
+    <h4 style="font-size:13px;color:#555;margin:0 0 8px">Restaurar ao padrão do .env</h4>
+    {% for campo, rotulo in [('envio_throttle_s','↺ Pausa'),('envio_max_por_hora','↺ Teto/hora'),('envio_delay_uazapi_ms','↺ Digitando')] %}
+    <form method="post" action="/configuracoes/throttle/restaurar" style="display:inline-block;margin-right:8px">
+      <input type="hidden" name="campo" value="{{ campo }}">
+      <button class="btn btn-secondary btn-sm" type="submit"
+              onclick="return confirm('Restaurar este campo ao padrão do .env?');">{{ rotulo }}</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ============== Estado da fila uazapi + reset de emergência ============== -->
+<div class="card" style="max-width:780px">
+  <h2>📥 Fila interna da uazapi</h2>
+  {% if fila_uazapi %}
+    {% if fila_uazapi.ok %}
+      <p style="font-size:13px;color:#555;margin:0 0 8px">
+        Status atual: <code>{{ fila_uazapi.detalhes.status or '—' }}</code>
+        {% if fila_uazapi.detalhes.pending is defined %} · Pendentes: <strong>{{ fila_uazapi.detalhes.pending }}</strong>{% endif %}
+        {% if fila_uazapi.detalhes.processingNow is defined %} · Processando agora: <strong>{{ fila_uazapi.detalhes.processingNow }}</strong>{% endif %}
+      </p>
+    {% else %}
+      <p style="font-size:13px;color:#9b1c1c;margin:0 0 8px">
+        Não consegui consultar: {{ fila_uazapi.mensagem }}
+      </p>
+    {% endif %}
+  {% else %}
+    <p class="resumo">Configure a uazapi acima para consultar a fila.</p>
+  {% endif %}
+
+  <p style="font-size:12px;color:#888;margin:10px 0 14px">
+    Fila <code>async</code> da uazapi (nosso fluxo é síncrono e normalmente não a usa). Botão abaixo = reset de emergência.
+  </p>
+
+  <form method="post" action="/configuracoes/uazapi/limpar-fila" style="display:inline-block">
+    <button class="btn btn-danger btn-sm" type="submit"
+            onclick="return confirm('Apagar TODAS as mensagens pendentes na fila uazapi? Esta ação é irreversível.');">🧹 Limpar fila uazapi</button>
+  </form>
+</div>
+
+<script>
+// Mostrar/ocultar campos sensíveis (G-Click secret, uazapi token, etc.)
+function olho(id, btn) {
+  const i = document.getElementById(id);
+  if (!i) return;
+  if (i.type === 'password') { i.type = 'text'; btn.textContent = '🙈'; }
+  else { i.type = 'password'; btn.textContent = '👁'; }
+}
+</script>
+{% endblock %}

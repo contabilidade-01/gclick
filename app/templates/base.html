@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Envio de Guias — Nescon{% endblock %}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+           background: #f5f6fa; color: #222; margin: 0; }
+    header { background: #1e3a5f; color: white; padding: 12px 24px; display: flex;
+             align-items: center; justify-content: space-between; }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header nav a { color: #cfd8e3; text-decoration: none; margin-left: 18px; font-size: 14px; }
+    header nav a:hover, header nav a.active { color: white; }
+    main { max-width: 1300px; margin: 24px auto; padding: 0 24px; }
+    .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            padding: 20px; margin-bottom: 20px; }
+    h2 { margin: 0 0 16px; font-size: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { background: #f0f2f5; padding: 10px; text-align: left; font-weight: 600; border-bottom: 2px solid #e1e4e8; }
+    td { padding: 10px; border-bottom: 1px solid #eaecef; }
+    tr:hover td { background: #fafbfc; }
+    .btn { display: inline-block; padding: 8px 14px; border-radius: 6px; border: 0;
+           cursor: pointer; font-size: 14px; font-weight: 500; text-decoration: none; }
+    .btn-primary { background: #1e3a5f; color: white; }
+    .btn-primary:hover { background: #2a5089; }
+    .btn-secondary { background: #e1e4e8; color: #24292e; }
+    .btn-danger { background: #cf3a3a; color: white; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+    .badge-ok { background: #def7ec; color: #03543f; }
+    .badge-pend { background: #fdf6b2; color: #723b13; }
+    .badge-falta { background: #fde8e8; color: #9b1c1c; }
+    .badge-warn { background: #feecdc; color: #771d1d; }
+    .filtros { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .filtros label { font-size: 13px; color: #555; }
+    .filtros select, .filtros input { padding: 6px 10px; border: 1px solid #d1d5da; border-radius: 6px; font-size: 14px; }
+    .toolbar { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin-top: 16px; }
+    .resumo { color: #555; font-size: 13px; }
+    .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; }
+    .alert-warn { background: #fdf6b2; color: #723b13; border-left: 4px solid #d99e0b; }
+    .alert-info { background: #e1effe; color: #1e429f; border-left: 4px solid #3f83f8; }
+    .login-box { max-width: 360px; margin: 80px auto; }
+    .login-box input { width: 100%; padding: 10px; margin: 6px 0 14px;
+                       border: 1px solid #d1d5da; border-radius: 6px; font-size: 15px; }
+    .login-box label { font-size: 13px; color: #555; }
+    .login-box .btn { width: 100%; padding: 10px; font-size: 15px; }
+    /* Barra de progresso de navegação (feedback ao trocar de página) */
+    #nav-progress { position: fixed; top: 0; left: 0; height: 3px; width: 0;
+                    background: #3f83f8; z-index: 9999; box-shadow: 0 0 6px #3f83f8;
+                    opacity: 0; }
+    #nav-progress.active { width: 92%; opacity: 1;
+                           transition: width 9s cubic-bezier(0.1,0.85,0.2,1); }
+    body.navigating { cursor: progress; }
+    /* Overlay de carregamento (aparece só quando a página demora a vir) */
+    #load-overlay { position: fixed; inset: 0; z-index: 10000; display: none;
+                    flex-direction: column; align-items: center; justify-content: center;
+                    gap: 14px; background: rgba(245,246,250,0.88); }
+    #load-overlay.show { display: flex; }
+    #load-overlay .spinner { width: 52px; height: 52px; border: 5px solid #d3dae6;
+                    border-top-color: #1e3a5f; border-radius: 50%;
+                    animation: gc-spin 0.9s linear infinite; }
+    @keyframes gc-spin { to { transform: rotate(360deg); } }
+    #load-overlay .msg { color: #1e3a5f; font-size: 16px; font-weight: 600; }
+    #load-overlay .sub { color: #6b7280; font-size: 13px; }
+  </style>
+</head>
+<body>
+<div id="nav-progress"></div>
+<div id="load-overlay">
+  <div class="spinner"></div>
+  <div class="msg">⏳ Buscando os dados mais recentes…</div>
+  <div class="sub">Consultando o G-Click — pode levar alguns segundos na primeira vez.</div>
+</div>
+{% if usuario %}
+<header>
+  <h1>📤 Envio de Guias — Nescon</h1>
+  <nav>
+    <a href="/" class="{{ 'active' if active=='dashboard' else '' }}">📊 Dashboard</a>
+    <a href="/fila" class="{{ 'active' if active=='fila' else '' }}">Fila do mês</a>
+    <a href="/check" class="{{ 'active' if active=='check' else '' }}">Check de enviados</a>
+    <a href="/tipos" class="{{ 'active' if active=='tipos' else '' }}">Tipos de documentos</a>
+    <a href="/clientes" class="{{ 'active' if active=='clientes' else '' }}">Clientes</a>
+    <a href="/auditoria" class="{{ 'active' if active=='auditoria' else '' }}">Auditoria</a>
+    <a href="/configuracoes" class="{{ 'active' if active=='configuracoes' else '' }}">⚙</a>
+    <a href="/logout">Sair ({{ usuario }})</a>
+  </nav>
+</header>
+{% endif %}
+<main>
+  {% block content %}{% endblock %}
+</main>
+<script>
+// Mostra uma barra fininha no topo ao clicar num link de menu ou enviar um
+// formulário — feedback imediato enquanto a próxima página carrega (telas
+// pesadas como Dashboard/Fila/Check podem levar alguns segundos no 1º acesso).
+(function () {
+  var bar = document.getElementById('nav-progress');
+  var overlay = document.getElementById('load-overlay');
+  var overlayTimer = null;
+  function start() {
+    if (bar) { bar.classList.add('active'); }
+    document.body.classList.add('navigating');
+    // Só mostra o overlay se a página realmente demorar (>400ms) — telas
+    // rápidas/quentes não chegam a piscar a animação.
+    if (overlay) {
+      overlayTimer = setTimeout(function () { overlay.classList.add('show'); }, 400);
+    }
+  }
+  function done() {
+    if (bar) { bar.classList.remove('active'); bar.style.width = '0'; }
+    document.body.classList.remove('navigating');
+    if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
+    if (overlay) { overlay.classList.remove('show'); }
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (a.target === '_blank' || a.hasAttribute('download')) return;
+    if (href.charAt(0) === '#' || href.indexOf('javascript:') === 0) return;
+    start();
+  }, true);
+  document.addEventListener('submit', function () { start(); }, true);
+  window.addEventListener('pageshow', done);
+})();
+</script>
+</body>
+</html>

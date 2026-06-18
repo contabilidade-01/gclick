@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Tipos de documentos padrão</h2>
+  <p class="resumo">
+    Cada tipo tem um nome amigável, uma lista de <strong>termos</strong> (separados por <code>|</code>) que o sistema procura no nome da atividade/obrigação do G-Click, um <strong>template de mensagem</strong> opcional e a marcação se o documento tem vencimento (guia de pagamento) ou não (recibo, extrato).
+  </p>
+  <p class="resumo" style="background:#f0f6ff;border-left:4px solid #1e3a5f;padding:8px 12px;border-radius:4px">
+    💡 <strong>Placeholders no template</strong>: <code>{cliente}</code>, <code>{competencia}</code>, <code>{vencimento}</code>, <code>{tipo}</code>, <code>{atividade}</code>, <code>{arquivo}</code>. Use <code>*texto*</code> para negrito no WhatsApp.
+  </p>
+  {% if sucesso %}<div class="alert alert-info">{{ sucesso }}</div>{% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:120px">Código</th>
+        <th style="width:180px">Nome</th>
+        <th>Termos de identificação</th>
+        <th style="width:80px">Ordem</th>
+        <th style="width:90px">Tem venc.</th>
+        <th style="width:80px">Ativo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in tipos %}
+      <tr>
+        <form method="post" action="/tipos/salvar">
+          <input type="hidden" name="id" value="{{ t.id }}">
+          <td><input type="text" name="codigo" value="{{ t.codigo }}" style="width:110px;padding:6px;border:1px solid #d1d5da;border-radius:4px;text-transform:uppercase"></td>
+          <td><input type="text" name="nome" value="{{ t.nome }}" style="width:170px;padding:6px;border:1px solid #d1d5da;border-radius:4px"></td>
+          <td>
+            <input type="text" name="matchers" value="{{ t.matchers }}" style="width:100%;padding:6px;border:1px solid #d1d5da;border-radius:4px;margin-bottom:6px" placeholder="FGTS|FGTS Digital">
+            <textarea name="template_mensagem" rows="2" placeholder="Olá! Segue a guia {tipo} referente a {competencia}. Vencimento: {vencimento}." style="width:100%;padding:6px;border:1px solid #d1d5da;border-radius:4px;font-size:12px">{{ t.template_mensagem or '' }}</textarea>
+          </td>
+          <td><input type="number" name="ordem" value="{{ t.ordem }}" style="width:70px;padding:6px;border:1px solid #d1d5da;border-radius:4px"></td>
+          <td>
+            <select name="tem_vencimento" style="padding:6px;border:1px solid #d1d5da;border-radius:4px">
+              <option value="1" {% if t.tem_vencimento %}selected{% endif %}>Sim</option>
+              <option value="0" {% if not t.tem_vencimento %}selected{% endif %}>Não</option>
+            </select>
+          </td>
+          <td>
+            <select name="ativo" style="padding:6px;border:1px solid #d1d5da;border-radius:4px">
+              <option value="1" {% if t.ativo %}selected{% endif %}>Sim</option>
+              <option value="0" {% if not t.ativo %}selected{% endif %}>Não</option>
+            </select>
+          </td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-primary btn-sm" type="submit">Salvar</button>
+            <button class="btn btn-danger btn-sm" type="submit" formaction="/tipos/deletar" onclick="return confirm('Excluir o tipo {{ t.codigo }}?');">Excluir</button>
+          </td>
+        </form>
+      </tr>
+    {% endfor %}
+      <!-- linha para novo tipo -->
+      <tr style="background:#f8fbff">
+        <form method="post" action="/tipos/salvar">
+          <td><input type="text" name="codigo" placeholder="EX: PIS" required style="width:110px;padding:6px;border:1px solid #d1d5da;border-radius:4px;text-transform:uppercase"></td>
+          <td><input type="text" name="nome" placeholder="Nome amigável" required style="width:170px;padding:6px;border:1px solid #d1d5da;border-radius:4px"></td>
+          <td>
+            <input type="text" name="matchers" placeholder="PIS|PIS/COFINS" required style="width:100%;padding:6px;border:1px solid #d1d5da;border-radius:4px;margin-bottom:6px">
+            <textarea name="template_mensagem" rows="2" placeholder="Template opcional (deixe vazio para usar o padrão)" style="width:100%;padding:6px;border:1px solid #d1d5da;border-radius:4px;font-size:12px"></textarea>
+          </td>
+          <td><input type="number" name="ordem" value="100" style="width:70px;padding:6px;border:1px solid #d1d5da;border-radius:4px"></td>
+          <td>
+            <select name="tem_vencimento" style="padding:6px;border:1px solid #d1d5da;border-radius:4px">
+              <option value="1" selected>Sim</option>
+              <option value="0">Não</option>
+            </select>
+          </td>
+          <td>
+            <select name="ativo" style="padding:6px;border:1px solid #d1d5da;border-radius:4px">
+              <option value="1" selected>Sim</option>
+              <option value="0">Não</option>
+            </select>
+          </td>
+          <td><button class="btn btn-primary btn-sm" type="submit">➕ Adicionar</button></td>
+        </form>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

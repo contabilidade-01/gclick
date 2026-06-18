@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" style="max-width:780px">
+  <h2>Editar cliente</h2>
+  <p class="resumo"><a href="/clientes">← voltar à lista</a></p>
+  {% if sucesso %}<div class="alert alert-info">{{ sucesso }}</div>{% endif %}
+
+  <div style="background:#f0f6ff;border-left:4px solid #1e3a5f;padding:10px 14px;border-radius:4px;margin-bottom:18px;font-size:13px">
+    <div><strong>Razão social no G-Click:</strong> {{ cliente.nome_completo or '—' }}</div>
+    <div><strong>Status no G-Click:</strong>
+      {% if cliente.status_gclick == 'ATIVO' %}<span class="badge badge-ok">ATIVO</span>
+      {% elif cliente.status_gclick == 'DESATIVADO' %}<span class="badge badge-falta">DESATIVADO</span>
+      {% else %}<span style="color:#888">—</span>{% endif %}
+    </div>
+    <div><strong>Origem dos dados:</strong> {{ cliente.origem_dados or 'gclick' }}</div>
+    <div><strong>Envio automático:</strong>
+      {% if cliente.get('envio_automatico') %}<span class="badge badge-ok">⚡ ATIVO</span>
+      {% else %}<span style="color:#888">Desativado</span>{% endif %}
+    </div>
+  </div>
+
+  <form method="post" action="/clientes/{{ cliente.cnpj }}/editar">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <label style="font-size:13px;color:#555">CNPJ</label>
+        <input type="text" value="{{ cliente.cnpj }}" disabled style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px;background:#f6f8fa;color:#666">
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">Apelido / Razão</label>
+        <input type="text" name="apelido" value="{{ cliente.apelido or '' }}" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">📱 WhatsApp (DDI+DDD+nº, só dígitos)</label>
+        <input type="text" name="whatsapp" value="{{ cliente.whatsapp or '' }}" placeholder="5511999999999" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+        <small style="color:#888">Este número receberá as guias.</small>
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">📧 Email</label>
+        <input type="email" name="email" value="{{ cliente.email or '' }}" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">Responsável (nome)</label>
+        <input type="text" name="responsavel_nome" value="{{ cliente.responsavel_nome or '' }}" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">Ativo</label>
+        <select name="ativo" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+          <option value="1" {% if cliente.ativo %}selected{% endif %}>Sim — receber guias</option>
+          <option value="0" {% if not cliente.ativo %}selected{% endif %}>Não — pausar envios</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">⚡ Envio automático</label>
+        <select name="envio_automatico" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+          <option value="1" {% if cliente.get('envio_automatico') %}selected{% endif %}>Sim — envia ao liberar no G-Click</option>
+          <option value="0" {% if not cliente.get('envio_automatico') %}selected{% endif %}>Não — só envio manual</option>
+        </select>
+        <small style="color:#888">Quando ativo, recebe guias automaticamente quando o G-Click sinalizar "Enviar para o Cliente".</small>
+      </div>
+      <div>
+        <label style="font-size:13px;color:#555">Obrigações aceitas (códigos, vírgula)</label>
+        <input type="text" name="obrigacoes_aceitas" value="{{ cliente.obrigacoes_aceitas or '' }}" placeholder="FGTS,DCTF_WEB,DAS  (vazio = todas)" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">
+        <small style="color:#888">Use os códigos de <a href="/tipos">Tipos de documentos</a>. Vazio = recebe tudo.</small>
+      </div>
+      <div style="grid-column:1/-1">
+        <label style="font-size:13px;color:#555">Observações</label>
+        <textarea name="observacoes" rows="3" style="width:100%;padding:8px;border:1px solid #d1d5da;border-radius:4px">{{ cliente.observacoes or '' }}</textarea>
+      </div>
+    </div>
+    <div style="margin-top:18px;display:flex;gap:10px">
+      <button class="btn btn-primary" type="submit">Salvar</button>
+      <a class="btn btn-secondary" href="/clientes">Cancelar</a>
+    </div>
+  </form>
+
+  <hr style="margin:24px 0;border:0;border-top:1px solid #eaecef">
+
+  <h3 style="font-size:14px;margin:0 0 10px">Atualizado em</h3>
+  <p class="resumo">{{ cliente.atualizado_em or '—' }}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card" style="max-width:900px;margin:0 auto">
+  <h2>📤 Enviando guias</h2>
+  <p class="resumo" id="resumo-linha">Preparando…</p>
+
+  <!-- Barra de progresso -->
+  <div style="background:#e1e4e8;height:14px;border-radius:8px;overflow:hidden;margin:18px 0 6px">
+    <div id="barra" style="background:#22c55e;height:100%;width:0%;transition:width 280ms ease"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:13px;color:#555">
+    <span><strong id="contador">0 / 0</strong> processadas</span>
+    <span id="percent">0%</span>
+    <span>tempo: <strong id="decorrido">0 s</strong></span>
+  </div>
+
+  <!-- Linha do "agora" -->
+  <div id="agora" style="margin-top:18px;padding:14px 16px;background:#f0f6ff;border-left:4px solid #1e3a5f;border-radius:6px;display:none">
+    <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.5px">Enviando agora</div>
+    <div style="font-size:16px;font-weight:600;margin-top:4px"><span id="atual-cliente">—</span></div>
+    <div style="font-size:13px;color:#555;margin-top:2px" id="atual-arquivo"></div>
+  </div>
+
+  <!-- Contadores por status -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px">
+    <div style="background:#def7ec;color:#03543f;padding:10px 14px;border-radius:6px;text-align:center">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px">✅ Enviadas</div>
+      <div style="font-size:24px;font-weight:600" id="c-ok">0</div>
+    </div>
+    <div style="background:#feecdc;color:#771d1d;padding:10px 14px;border-radius:6px;text-align:center">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px">⚠ Bloqueadas</div>
+      <div style="font-size:24px;font-weight:600" id="c-blq">0</div>
+    </div>
+    <div style="background:#fde8e8;color:#9b1c1c;padding:10px 14px;border-radius:6px;text-align:center">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px">❌ Falhas</div>
+      <div style="font-size:24px;font-weight:600" id="c-fail">0</div>
+    </div>
+  </div>
+
+  <!-- Lista de eventos -->
+  <h3 style="font-size:14px;margin:22px 0 10px;color:#555">Histórico recente</h3>
+  <div id="mensagens" style="max-height:340px;overflow-y:auto;border:1px solid #eaecef;border-radius:6px;background:#fafbfc">
+    <div style="padding:14px;color:#888;font-size:13px" id="msg-vazio">Aguardando primeiro envio…</div>
+  </div>
+
+  <!-- Erro fatal -->
+  <div id="erro-fatal" class="alert alert-warn" style="display:none;margin-top:18px;background:#fff5f5;border-left:4px solid #cf3a3a;color:#9b1c1c"></div>
+
+  <!-- Rodapé -->
+  <div class="toolbar" style="margin-top:24px">
+    <div class="resumo" id="status-resumo">⏳ Processando…</div>
+    <div>
+      <a href="/fila" class="btn btn-secondary" id="btn-voltar" style="display:none">← Voltar à fila</a>
+      <a href="/auditoria" class="btn btn-secondary" id="btn-auditoria" style="display:none">Ver auditoria completa →</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const POLL_MS = 600;
+  const elContador = document.getElementById('contador');
+  const elBarra = document.getElementById('barra');
+  const elPercent = document.getElementById('percent');
+  const elDecorrido = document.getElementById('decorrido');
+  const elAgora = document.getElementById('agora');
+  const elAtualCli = document.getElementById('atual-cliente');
+  const elAtualArq = document.getElementById('atual-arquivo');
+  const elCOk = document.getElementById('c-ok');
+  const elCBlq = document.getElementById('c-blq');
+  const elCFail = document.getElementById('c-fail');
+  const elResumoLinha = document.getElementById('resumo-linha');
+  const elMsgs = document.getElementById('mensagens');
+  const elMsgVazio = document.getElementById('msg-vazio');
+  const elStatusResumo = document.getElementById('status-resumo');
+  const elBtnVoltar = document.getElementById('btn-voltar');
+  const elBtnAuditoria = document.getElementById('btn-auditoria');
+  const elErroFatal = document.getElementById('erro-fatal');
+
+  let ultimoTs = 0;
+  let timer = null;
+  let redirecionou = false;
+
+  function pintarMsg(m) {
+    const div = document.createElement('div');
+    const cor = m.tipo === 'ok' ? '#03543f' : (m.tipo === 'aviso' ? '#771d1d' : '#9b1c1c');
+    div.style.cssText = 'padding:8px 14px;border-bottom:1px solid #eaecef;font-size:13px;color:' + cor;
+    div.textContent = m.texto;
+    elMsgs.insertBefore(div, elMsgs.firstChild);
+  }
+
+  async function tick() {
+    let r;
+    try {
+      r = await fetch('/enviar/status', {cache: 'no-store'});
+    } catch (e) { return; }
+    if (!r.ok) return;
+    const s = await r.json();
+    const total = Math.max(1, s.total || 0);
+    const feitos = s.feitos || 0;
+    const pct = Math.round(100 * feitos / total);
+
+    elContador.textContent = feitos + ' / ' + s.total;
+    elBarra.style.width = pct + '%';
+    elPercent.textContent = pct + '%';
+    elDecorrido.textContent = (s.decorrido_s || 0) + ' s';
+    elCOk.textContent = s.enviados || 0;
+    elCBlq.textContent = s.bloqueados || 0;
+    elCFail.textContent = s.falhas || 0;
+
+    if (s.atual_cliente) {
+      elAgora.style.display = 'block';
+      elAtualCli.textContent = s.atual_cliente + '  ·  guia ' + (s.atual_idx || 0) + ' de ' + s.total;
+      elAtualArq.textContent = s.atual_arquivo || '';
+    }
+
+    // Mensagens novas (entram do topo)
+    const msgs = s.mensagens || [];
+    const novas = msgs.filter(m => m.ts > ultimoTs);
+    if (novas.length) {
+      if (elMsgVazio) { elMsgVazio.style.display = 'none'; }
+      novas.forEach(pintarMsg);
+      ultimoTs = msgs[msgs.length - 1].ts;
+    }
+
+    if (s.ativo) {
+      const restantes = (s.total || 0) - feitos;
+      elResumoLinha.textContent = 'Enviando ' + s.total + ' guia(s). Faltam ' + restantes + '.';
+    } else {
+      // Fim do lote
+      clearInterval(timer);
+      if (s.erro_fatal) {
+        elErroFatal.style.display = 'block';
+        elErroFatal.textContent = '❌ ' + s.erro_fatal;
+      }
+      elStatusResumo.innerHTML =
+        '✅ Concluído: <strong>' + (s.enviados || 0) + '</strong> enviada(s)' +
+        ', <strong>' + (s.bloqueados || 0) + '</strong> bloqueada(s)' +
+        ', <strong>' + (s.falhas || 0) + '</strong> falha(s).';
+      elBtnVoltar.style.display = 'inline-block';
+      elBtnAuditoria.style.display = 'inline-block';
+      // Redireciona automático 4 segundos depois
+      if (!redirecionou) {
+        redirecionou = true;
+        setTimeout(function () {
+          if (s.destino) { window.location.href = s.destino; }
+        }, 4000);
+      }
+    }
+  }
+
+  // Primeira chamada imediata + intervalo
+  tick();
+  timer = setInterval(tick, POLL_MS);
+})();
+</script>
+
+{% endblock %}

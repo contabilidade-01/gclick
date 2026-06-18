@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+.print-only { display: none; }
+@media print {
+  .btn, .filtros, .alert, form, .no-print { display: none !important; }
+  .print-only { display: inline !important; }
+  .card { box-shadow: none; border: 1px solid #ddd; margin: 0; padding: 10px; }
+  h2 { margin-bottom: 10px; }
+  table { font-size: 11px; width: 100%; }
+  th, td { padding: 4px 8px; }
+  .print-info { display: block !important; }
+  body { background: white; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <h2>Clientes — Cadastro CNPJ ↔ WhatsApp</h2>
+    <div class="no-print">
+      <button class="btn btn-secondary" onclick="window.print()">🖨️ Imprimir</button>
+    </div>
+  </div>
+  <div class="print-info" style="display:none;font-size:12px;color:#666;margin-bottom:10px">
+    <strong>Filtro:</strong> {% if filtro == 'sem_whatsapp' %}Sem WhatsApp{% elif filtro == 'fora_padrao' %}Fora do padrão{% elif filtro == 'desativados' %}Desativados{% else %}Todos{% endif %}
+    | <strong>Total:</strong> {{ clientes|length }}
+  </div>
+  <form method="get" action="/clientes" class="filtros no-print" style="margin-bottom:8px">
+    <button class="btn btn-secondary" type="submit" name="sync" value="1">🔄 Sincronizar do G-Click</button>
+    <button class="btn btn-danger" type="submit" name="sync" value="1" onclick="this.form.sobrescrever.value='1';return confirm('SOBRESCREVER vai pisar nas edições manuais (WhatsApp, responsável, email) com os dados do G-Click. Continuar?');">⚠ Forçar sobrescrita</button>
+    <input type="hidden" name="sobrescrever" value="0">
+  </form>
+  <p style="font-size:13px;color:#666;margin:0 0 14px">
+    💡 <strong>Fluxo recomendado:</strong> a sua equipe atualiza telefone/email no G-Click → você clica em <strong>"🔄 Sincronizar do G-Click"</strong> aqui e os dados vêm prontos. A sync padrão <strong>não sobrescreve</strong> o que você editou manualmente — só preenche o que está vazio.
+  </p>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div class="filtros">
+      <strong style="font-size:13px">Mostrar:</strong>
+      <a href="/clientes" class="btn btn-sm {% if not filtro %}btn-primary{% else %}btn-secondary{% endif %}">Todos ({{ total_geral }})</a>
+      <a href="/clientes?filtro=sem_whatsapp" class="btn btn-sm {% if filtro=='sem_whatsapp' %}btn-primary{% else %}btn-secondary{% endif %}">⚠ Sem WhatsApp ({{ total_sem_whatsapp }})</a>
+      <a href="/clientes?filtro=fora_padrao" class="btn btn-sm {% if filtro=='fora_padrao' %}btn-primary{% else %}btn-secondary{% endif %}">🔢 Fora do padrão ({{ total_fora_padrao }})</a>
+      <a href="/clientes?filtro=desativados" class="btn btn-sm {% if filtro=='desativados' %}btn-primary{% else %}btn-secondary{% endif %}">Desativados ({{ total_desativados }})</a>
+      <a href="/clientes?filtro=auto" class="btn btn-sm {% if filtro=='auto' %}btn-primary{% else %}btn-secondary{% endif %}">⚡ Auto ({{ total_auto }})</a>
+    </div>
+    <button class="btn btn-secondary" onclick="window.print()" style="flex-shrink:0">🖨️ Imprimir</button>
+  </div>
+
+  {% if filtro != 'desativados' %}
+  <div class="filtros" style="margin-bottom:12px;padding:8px;background:#f8f9fa;border-radius:6px">
+    <strong style="font-size:13px">Envio automático:</strong>
+    <button class="btn btn-success btn-sm" onclick="marcarTodasAuto(1)">⚡ Marcar todas</button>
+    <button class="btn btn-secondary btn-sm" onclick="marcarTodasAuto(0)">⏸ Desmarcar todas</button>
+    <span style="font-size:12px;color:#666;margin-left:8px">{{ total_auto }} cliente(s) com automático ativo.</span>
+  </div>
+  {% endif %}
+
+  {% if sucesso %}<div class="alert alert-info">{{ sucesso }}</div>{% endif %}
+
+  <form id="form-marcar-auto" method="post" action="/clientes/marcar-auto" style="display:none">
+    <input type="hidden" name="ativo" id="marcar-auto-ativo" value="">
+  </form>
+
+  <table class="print-friendly">
+    <thead>
+      <tr>
+        <th>CNPJ</th>
+        <th>Apelido</th>
+        <th>WhatsApp</th>
+        <th>Email</th>
+        <th>Responsável</th>
+        <th>Status</th>
+        <th>Ativo</th>
+        <th class="no-print">Auto</th>
+        <th class="no-print"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in clientes %}
+      <tr {% if focus == c.cnpj %}style="background:#fdf6b2"{% endif %}>
+        <form method="post" action="/clientes/salvar" class="no-print">
+          <input type="hidden" name="cnpj" value="{{ c.cnpj }}">
+          <td><code>{{ c.cnpj }}</code></td>
+          <td>
+            <div>{{ c.apelido }}</div>
+            {% if c.nome_completo and c.nome_completo != c.apelido %}<div style="color:#888;font-size:11px">{{ c.nome_completo }}</div>{% endif %}
+          </td>
+          <td>
+            <input type="text" name="whatsapp" value="{{ c.whatsapp or '' }}" placeholder="5511999999999" class="no-print"
+                   style="width:160px;padding:6px;border:1px solid {% if c._digitos > 0 and c._digitos != 13 %}#dc3545{% else %}#d1d5da{% endif %};border-radius:4px">
+            <span class="print-only">{{ c.whatsapp or '—' }}</span>
+            {% if c._digitos > 0 and c._digitos != 13 %}
+              <div class="no-print" style="margin-top:3px;font-size:11px;color:#dc3545">⚠ {{ c._digitos }} dígitos</div>
+            {% endif %}
+            {% if c.origem_dados == 'manual' %}
+              <div class="no-print" style="margin-top:3px;font-size:11px;color:#1e3a5f">🔒 manual</div>
+            {% endif %}
+          </td>
+          <td style="color:#555;font-size:12px">{{ c.email or '—' }}</td>
+          <td style="color:#555">{{ c.responsavel_nome or '—' }}</td>
+          <td>
+            {% if c.status_gclick == 'ATIVO' %}<span class="badge badge-ok no-print">ATIVO</span><span class="print-only">ATIVO</span>
+            {% elif c.status_gclick == 'DESATIVADO' %}<span class="badge badge-falta no-print">DESATIVADO</span><span class="print-only">DESATIVADO</span>
+            {% else %}<span style="color:#bbb">—</span>{% endif %}
+          </td>
+          <td>
+            <span class="no-print">
+            <select name="ativo" style="padding:6px;border:1px solid #d1d5da;border-radius:4px">
+              <option value="1" {% if c.ativo %}selected{% endif %}>Sim</option>
+              <option value="0" {% if not c.ativo %}selected{% endif %}>Não</option>
+            </select>
+            </span>
+            <span class="print-only">{% if c.ativo %}Sim{% else %}Não{% endif %}</span>
+          </td>
+          <td class="no-print" style="text-align:center">
+            <input type="checkbox" class="auto-chk" data-cnpj="{{ c.cnpj }}" {% if c.get('envio_automatico') %}checked{% endif %} onchange="salvarAuto(this)">
+          </td>
+          <td class="no-print">
+            <button class="btn btn-primary btn-sm" type="submit">Salvar</button>
+            <a class="btn btn-secondary btn-sm" href="/clientes/{{ c.cnpj }}/editar">✏ Editar</a>
+          </td>
+        </form>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" style="text-align:center;color:#888;padding:30px">
+        Nenhum cliente encontrado. {% if filtro %}Tente <a href="/clientes">voltar para Todos</a>.{% else %}Clique em <strong>"Sincronizar do G-Click"</strong>.{% endif %}
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form id="form-marcar-auto" method="post" action="/clientes/marcar-auto" style="display:none">
+    <input type="hidden" name="ativo" id="marcar-auto-ativo" value="">
+  </form>
+
+  <script>
+  // Marca/desmarca todos e submete
+  function marcarTodasAuto(ativo) {
+    document.querySelectorAll('.auto-chk').forEach(cb => cb.checked = ativo === 1);
+    document.getElementById('marcar-auto-ativo').value = ativo;
+    document.getElementById('form-marcar-auto').submit();
+  }
+
+  // Salva individualmente ao trocar checkbox
+  async function salvarAuto(cb) {
+    const cnpj = cb.dataset.cnpj;
+    const ativo = cb.checked ? 1 : 0;
+    try {
+      const fd = new FormData();
+      fd.append('ativo', ativo);
+      await fetch(`/clientes/${cnpj}/auto`, {method: 'POST', body: fd});
+    } catch(e) { console.error(e); }
+  }
+  </script>
+</div>
+{% endblock %}

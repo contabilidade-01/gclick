@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Check de documentos enviados</h2>
+  <p class="resumo">
+    Matriz cliente × tipo de documento na competência escolhida. ✅ = enviado, ⏳ = pronto para enviar (PDF disponível), ⚠ = sem anexo no G-Click ainda, — = não se aplica neste mês.
+  </p>
+  <form method="get" action="/check" class="filtros">
+    <label>Competência (vencimento):</label>
+    <select name="competencia">
+      {% for c in competencias_opcoes %}
+        <option value="{{ c.valor }}" {% if c.valor == competencia %}selected{% endif %}>{{ c.label }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-primary" type="submit" onclick="document.getElementById('loading').style.display='inline'">Atualizar</button>
+    <span id="loading" style="display:none;color:#888;font-size:13px">⏳ consultando G-Click...</span>
+  </form>
+
+  {% if erro_carga %}
+    <div class="alert alert-warn">Erro ao carregar: {{ erro_carga }}</div>
+  {% endif %}
+
+  {% if nao_classificadas %}
+    <div class="alert alert-warn">
+      ⚠ <strong>{{ nao_classificadas|length }} guia(s) não foram classificadas</strong> em nenhum tipo padrão. Veja em <a href="/tipos">Tipos de documentos</a> e ajuste os termos. Exemplos: {% for nc in nao_classificadas[:5] %}<code>{{ nc }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if divergencias %}
+    <div class="alert" style="background:#fff5f5;border-left:4px solid #cf3a3a;color:#9b1c1c;padding:12px 16px;border-radius:6px;margin-bottom:16px">
+      🚨 <strong>{{ divergencias|length }} divergência(s) detectada(s):</strong> o nome do arquivo subido no G-Click parece NÃO bater com o tipo da atividade. Provavelmente alguém anexou o arquivo errado:
+      <ul style="margin:8px 0 0;padding-left:22px">
+      {% for d in divergencias[:10] %}
+        <li>
+          <strong>{{ d.apelido }}</strong> · atividade <code>{{ d.atividade_nome }}</code> ({{ d.tipo_atividade }}) recebeu arquivo <code>{{ d.arquivo_nome }}</code> que parece ser <strong>{{ d.tipo_arquivo }}</strong>.
+        </li>
+      {% endfor %}
+      {% if divergencias|length > 10 %}<li><em>... e mais {{ divergencias|length - 10 }}.</em></li>{% endif %}
+      </ul>
+      <p style="margin:8px 0 0;font-size:13px;color:#555">Corrija no G-Click (subindo o arquivo certo na atividade certa) ou ajuste os "Termos de identificação" em <a href="/tipos">Tipos de documentos</a> se os matchers estiverem captando mais do que deveriam.</p>
+    </div>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th style="position:sticky;left:0;background:#f0f2f5">Cliente</th>
+        {% for t in tipos %}
+          <th style="text-align:center" title="Matchers: {{ t.matchers }}">{{ t.nome }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for linha in matriz %}
+      <tr>
+        <td style="position:sticky;left:0;background:white">
+          <div>{{ linha.apelido }}</div>
+          <div style="color:#888;font-size:12px">{{ linha.cnpj }} {% if not linha.tem_whatsapp %}· <span class="badge badge-falta">sem WhatsApp</span>{% endif %}</div>
+        </td>
+        {% for t in tipos %}
+          {% set cel = linha.celulas[t.codigo] %}
+          <td style="text-align:center" title="{{ cel.titulo }}">
+            {% if cel.status == 'enviado' %}<span class="badge badge-ok">✅</span>
+            {% elif cel.status == 'pronto' %}<span class="badge badge-pend">⏳</span>
+            {% elif cel.status == 'sem_anexo' %}<span class="badge badge-warn">⚠</span>
+            {% else %}<span style="color:#bbb">—</span>{% endif %}
+          </td>
+        {% endfor %}
+      </tr>
+    {% else %}
+      <tr><td colspan="{{ tipos|length + 1 }}" style="text-align:center;color:#888;padding:30px">Nenhuma guia nesta competência.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="toolbar">
+    <div class="resumo">
+      <strong>{{ stats.clientes }}</strong> cliente(s) · <strong>{{ stats.enviadas }}</strong> enviada(s) · <strong>{{ stats.prontas }}</strong> prontas · <strong>{{ stats.sem_anexo }}</strong> sem anexo
+    </div>
+  </div>
+</div>
+{% endblock %}

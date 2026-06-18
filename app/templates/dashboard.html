@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- Linha 1: cabeçalho do dia -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+  <div>
+    <div style="font-size:13px;color:#888">{{ hoje_fmt }}</div>
+    <h2 style="margin:4px 0 0;font-size:22px">Bom dia, {{ usuario }} — competência: <span style="color:#1e3a5f">{{ competencia_fmt }}</span></h2>
+  </div>
+  <div style="display:flex;gap:8px">
+    <a class="btn btn-secondary btn-sm" href="/fila?competencia={{ competencia }}">Ver fila completa →</a>
+    <a class="btn btn-secondary btn-sm" href="/check?competencia={{ competencia }}">Check de enviados →</a>
+  </div>
+</div>
+
+<!-- Linha 2: alerta crítico de hoje -->
+{% if vence_hoje %}
+<div class="card" style="border-left:6px solid #cf3a3a;background:#fff5f5;margin-bottom:18px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <h2 style="margin:0;color:#9b1c1c">🔴 ATENÇÃO: {{ vence_hoje|length }} guia(s) vencem HOJE ou estão atrasadas e ainda não foram enviadas</h2>
+      <p class="resumo" style="margin:6px 0 0">Envie agora para não perder o prazo.</p>
+    </div>
+    <form method="post" action="/enviar" style="margin:0">
+      <input type="hidden" name="competencia" value="{{ competencia }}">
+      <input type="hidden" name="origem" value="dashboard">
+      <input type="hidden" name="acao" value="lote">
+      {% for g in vence_hoje %}<input type="hidden" name="chave" value="{{ g.chave }}">{% endfor %}
+      <button class="btn btn-danger" type="submit" onclick="return confirm('Enviar TODAS as {{ vence_hoje|length }} guias vencidas/vencendo hoje?');">🚨 Enviar todas agora</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if not uazapi_ok %}
+<div class="alert alert-warn">
+  ⚠ uazapi não configurada — todos os envios ficam em <strong>modo simulado</strong> (gravam na auditoria com status "simulado"). Preencha <code>UAZAPI_SUBDOMAIN</code> e <code>UAZAPI_TOKEN</code> no arquivo <code>.env</code>.
+</div>
+{% endif %}
+
+{% if erro_carga %}
+<div class="alert alert-warn">Erro ao consultar G-Click: {{ erro_carga }}</div>
+{% endif %}
+
+<!-- Linha 3: KPIs do mês -->
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px">
+  <div class="card" style="margin:0">
+    <div style="font-size:12px;color:#888;text-transform:uppercase">Mês de {{ competencia_fmt.split('/')[0] }}</div>
+    <div style="font-size:32px;font-weight:600;color:#1e3a5f">{{ kpi_enviadas }}<span style="color:#bbb;font-size:18px"> / {{ kpi_total }}</span></div>
+    <div style="background:#e1e4e8;height:8px;border-radius:4px;overflow:hidden;margin-top:8px">
+      <div style="background:#22c55e;height:100%;width:{{ percentual }}%"></div>
+    </div>
+    <div style="font-size:12px;color:#555;margin-top:4px">{{ percentual }} % enviadas</div>
+  </div>
+
+  <div class="card" style="margin:0">
+    <div style="font-size:12px;color:#888;text-transform:uppercase">⏳ Prontas para enviar</div>
+    <div style="font-size:32px;font-weight:600;color:#723b13">{{ kpi_prontas }}</div>
+    <a href="/fila?competencia={{ competencia }}" style="font-size:12px;color:#1e3a5f">ver na fila →</a>
+  </div>
+
+  <div class="card" style="margin:0">
+    <div style="font-size:12px;color:#888;text-transform:uppercase">📱 Sem WhatsApp</div>
+    <div style="font-size:32px;font-weight:600;color:#9b1c1c">{{ kpi_sem_whatsapp }}</div>
+    <a href="/clientes?filtro=sem_whatsapp" style="font-size:12px;color:#1e3a5f">cadastrar →</a>
+  </div>
+
+  <div class="card" style="margin:0">
+    <div style="font-size:12px;color:#888;text-transform:uppercase">⚠ Sem anexo no G-Click</div>
+    <div style="font-size:32px;font-weight:600;color:#771d1d">{{ kpi_sem_anexo }}</div>
+    <div style="font-size:12px;color:#555;margin-top:4px">operador interno precisa subir o PDF</div>
+  </div>
+
+  <div class="card" style="margin:0">
+    <div style="font-size:12px;color:#888;text-transform:uppercase">👥 Clientes no cadastro</div>
+    <div style="font-size:32px;font-weight:600;color:#1e3a5f">{{ total_clientes_local }}</div>
+    <div style="font-size:12px;color:#555;margin-top:4px">{{ clientes_sem_whatsapp_local }} sem WhatsApp local</div>
+  </div>
+</div>
+
+<!-- Linha 4: próximos vencimentos + últimos envios -->
+<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px">
+  <div class="card" style="margin:0">
+    <h2 style="margin:0 0 12px">📅 Próximos vencimentos (7 dias)</h2>
+    {% if proximas %}
+      <table>
+        <thead><tr><th>Quando</th><th>Cliente</th><th>Documento</th><th></th></tr></thead>
+        <tbody>
+        {% for g in proximas %}
+          <tr>
+            <td>
+              {% if g.cor == 'vermelho' %}<span class="badge" style="background:#fde8e8;color:#9b1c1c">{{ g.rotulo }}</span>
+              {% elif g.cor == 'amarelo' %}<span class="badge badge-pend">{{ g.rotulo }}</span>
+              {% else %}<span class="badge" style="background:#def7ec;color:#03543f">{{ g.rotulo }}</span>{% endif %}
+              <div style="color:#888;font-size:11px;margin-top:2px">{{ g.venc_fmt }}</div>
+            </td>
+            <td>
+              <div>{{ g.cliente_apelido }}</div>
+              <div style="color:#888;font-size:11px">{{ g.cnpj }}</div>
+            </td>
+            <td>{{ g.atividade_nome }}<div style="color:#888;font-size:11px">{{ g.obrigacao_nome }}</div></td>
+            <td>
+              <form method="post" action="/enviar" style="margin:0">
+                <input type="hidden" name="competencia" value="{{ competencia }}">
+                <input type="hidden" name="origem" value="dashboard">
+                <button type="submit" name="chave_unica" value="{{ g.chave }}" class="btn btn-primary btn-sm">Enviar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div style="text-align:center;color:#888;padding:30px">
+        🎉 Nenhuma guia vencendo nos próximos 7 dias.
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card" style="margin:0">
+    <h2 style="margin:0 0 12px">📜 Últimos envios</h2>
+    {% if envios_recentes %}
+      <table>
+        <tbody>
+        {% for e in envios_recentes %}
+          <tr>
+            <td style="width:90px;font-size:12px;color:#555">{{ e.enviado_em_fmt }}</td>
+            <td>
+              <div style="font-size:13px">{{ e.arquivo_nome or '—' }}</div>
+              <div style="color:#888;font-size:11px">{{ e.cnpj }} · {{ e.competencia or '' }}</div>
+            </td>
+            <td style="width:80px;text-align:right">
+              {% if e.status == 'ok' %}<span class="badge badge-ok">ok</span>
+              {% elif e.status == 'simulado' %}<span class="badge badge-pend">sim</span>
+              {% elif e.status == 'falha' %}<span class="badge badge-falta">falha</span>
+              {% else %}<span class="badge badge-warn">{{ e.status }}</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <p style="margin:12px 0 0;font-size:12px;text-align:right"><a href="/auditoria">ver histórico completo →</a></p>
+    {% else %}
+      <div style="text-align:center;color:#888;padding:30px">
+        Nenhum envio registrado ainda.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Resultado do teste de conexão uazapi (quando solicitado) -->
+{% if uazapi_diag %}
+  {% if uazapi_diag.ok %}
+    <div class="alert alert-info" style="margin-top:18px">
+      🩺 <strong>uazapi OK:</strong> {{ uazapi_diag.mensagem }}
+    </div>
+  {% else %}
+    <div class="alert alert-warn" style="margin-top:18px;background:#fff5f5;border-left:4px solid #cf3a3a">
+      🩺 <strong>uazapi com problema ({{ uazapi_diag.categoria }}):</strong> {{ uazapi_diag.mensagem }}
+      {% if uazapi_diag.categoria == 'token_invalido' %}
+        <div style="margin-top:8px;font-size:13px">
+          ➤ Abra <a href="https://free.uazapi.com" target="_blank">o painel uazapi</a>, copie o token atual da instância <strong>Gclick</strong> e atualize <code>UAZAPI_TOKEN</code> no arquivo <code>.env</code>. Reinicie o servidor depois.
+        </div>
+      {% elif uazapi_diag.categoria == 'desconectado' %}
+        <div style="margin-top:8px;font-size:13px">
+          ➤ Abra o painel uazapi e <strong>escaneie novamente o QR code</strong> para reconectar a instância.
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endif %}
+
+<!-- Linha 5: saúde do sistema -->
+<div style="margin-top:18px;padding:12px 18px;background:white;border-radius:6px;font-size:12px;color:#555;display:flex;gap:24px;flex-wrap:wrap;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+  <div>🩺 <strong>Saúde:</strong></div>
+  <div>uazapi
+    {% if uazapi_ok %}<span class="badge badge-ok">✅ configurada</span>
+    {% else %}<span class="badge badge-warn">⚠ pendente</span>{% endif %}
+    <a href="/uazapi/teste" class="btn btn-sm" style="background:#e1e4e8;padding:2px 8px;font-size:11px;margin-left:6px;text-decoration:none;color:#24292e;border-radius:4px">🩺 Testar conexão</a>
+  </div>
+  <div>G-Click
+    {% if gclick_ok %}<span class="badge badge-ok">✅ conectado</span>
+    {% else %}<span class="badge badge-falta">❌ erro</span>{% endif %}
+  </div>
+  <div>Cache da fila: 60 s</div>
+</div>
+
+{% endblock %}

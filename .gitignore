@@ -1,0 +1,46 @@
+# ============================================================
+# ⚠️ ARQUIVOS DE DADOS - NUNCA APAGAR SEM BACKUP!
+# ============================================================
+# Environment and data
+.env
+.env.local
+*.db                 # Banco SQLite - FAZER BACKUP ANTES DE MODIFICAR!
+*.db-journal
+*.db-wal
+*.db-shm
+dados.db.bak*        # backups manuais do banco (contêm dados de cliente — LGPD)
+data/                # pasta de dados persistentes inteira (banco + PDFs)
+data/**/*.pdf        # PDFs das guias
+data/**/*.db
+data/**/*.sqlite
+_backup_docs_*/      # backups de documentação
+
+# ============================================================
+# Credentials and secrets (local only)
+# ============================================================
+secure/
+API GLICK.txt
+
+# Python
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Documentation
+docs/README.md
+docs/*.md.backup
+
+# Temporary files
+Contexto.txt
+Extensão Lion.txt
+*.tmp
+*.temp
