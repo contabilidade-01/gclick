@@ -34,7 +34,7 @@
     <tbody>
     {% for e in envios %}
       <tr>
-        <td>{{ e.enviado_em_fmt }}</td>
+        <td>{{ e.enviado_em_fmt }}{% if e.origem == 'automatico' %}<br><span style="font-size:11px;color:#166534" title="Enviado automaticamente pelo gatilho">⚡ auto</span>{% endif %}</td>
         <td><code>{{ e.cnpj }}</code></td>
         <td>{{ e.tarefa_id }}<br><span style="color:#888;font-size:12px">ativ. {{ e.atividade_id }}</span></td>
         <td>

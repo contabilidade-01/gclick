@@ -117,6 +117,100 @@ def iniciar_atualizador_periodico() -> None:
     logger.info("atualizador periódico ligado: a cada %.1fh", horas)
 
 
+# ---------- envio automático por gatilho do G-Click (Fase 2) ----------
+# Gatilho primário: atividade "Enviar para o Cliente" respondida (= liberada ao
+# cliente, o "e-mail enviado"). Fallback: tarefa concluída (status="C").
+
+_PADROES_ENVIAR_CLIENTE = ("enviar para o cliente", "enviar ao cliente",
+                           "enviado ao cliente", "enviar cliente")
+
+
+def _norm_ts(s: str | None) -> str:
+    """Normaliza timestamp do G-Click ('2026-01-15 09:52' ou ISO com 'T') para
+    comparação lexical estável até o minuto."""
+    return (s or "").replace("T", " ")[:16]
+
+
+def _gatilho_disparado(tarefa: dict, ativs: list[dict], gatilho: str) -> str | None:
+    """Devolve o timestamp do gatilho (string) se disparou, senão None."""
+    if gatilho == "concluida":
+        if (tarefa.get("status") or "") == "C":
+            return tarefa.get("dataConclusao") or tarefa.get("dataAcao") or ""
+        return None
+    # Primário: atividade "Enviar para o Cliente" respondida.
+    for a in ativs:
+        nome = (a.get("nome") or "").strip().lower()
+        if a.get("respondida") and any(p in nome for p in _PADROES_ENVIAR_CLIENTE):
+            return a.get("respondidaEm") or ""
+    return None
+
+
+def guias_elegiveis_auto(competencia: str, gatilho: str, corte_iso: str) -> list[dict]:
+    """Guias cuja tarefa já disparou o gatilho com timestamp >= corte.
+    NÃO filtra opt-in/enviadas — isso é responsabilidade do worker."""
+    corte = _norm_ts(corte_iso)
+    dados = carregar_tarefas_e_ativs(competencia, None)
+    elegiveis: list[dict] = []
+    for tarefa, ativs in dados:
+        ts = _gatilho_disparado(tarefa, ativs, gatilho)
+        if ts is None or _norm_ts(ts) < corte:
+            continue
+        elegiveis.extend(gclick.extrair_guias_pendentes(tarefa, ativs))
+    return elegiveis
+
+
+def _ciclo_auto_envio(cfg: dict) -> None:
+    """Um ciclo do worker: identifica guias elegíveis (gatilho + opt-in + não
+    enviadas) e as coloca na CAIXA DE SAÍDA para aprovação manual.
+    NÃO envia nada — o envio só acontece quando o operador aprova em /aprovacoes."""
+    hoje = date.today()
+    comp = f"{hoje.year:04d}-{hoje.month:02d}"
+    corte = db.get_config("auto_ativado_em") or hoje.isoformat()
+
+    elegiveis = guias_elegiveis_auto(comp, cfg["gatilho"], corte)
+    auto_cnpjs = {c["cnpj"] for c in db.listar_clientes_auto()}
+    whatsapp_map = db.map_whatsapp_por_cnpj()
+    enviadas = db.chaves_enviadas()
+    alvos = [
+        g for g in elegiveis
+        if (g["cnpj"] or "") in auto_cnpjs
+        and g.get("arquivo_url") and whatsapp_map.get(g["cnpj"] or "")
+        and ((g["cnpj"] or ""), g["tarefa_id"], g["atividade_id"]) not in enviadas
+    ]
+    # Enfileira (idempotente — a UNIQUE da tabela evita duplicar).
+    novas = sum(1 for g in alvos if db.enfileirar_aprovacao(g))
+    pendentes = db.contar_aprovacoes_pendentes()
+    db.set_config("auto_ultima_exec", db.agora_iso())
+    db.set_config(
+        "auto_ultimo_resultado",
+        f"{novas} nova(s) na Caixa de Saída · {pendentes} aguardando aprovação"
+        if novas else f"nada novo · {pendentes} aguardando aprovação",
+    )
+    logger.info("ciclo auto-envio: %d nova(s) enfileirada(s), %d pendente(s) (gatilho=%s)",
+                novas, pendentes, cfg["gatilho"])
+
+
+def iniciar_worker_auto_envio() -> None:
+    """Worker de polling do envio automático. Autocontrolado por `auto_envio_ativo`
+    (desligado = só dorme). Erros nunca derrubam a thread."""
+    def _loop() -> None:
+        _time.sleep(30)  # deixa o boot/prewarm respirarem
+        while True:
+            intervalo_s = 900
+            try:
+                cfg = config.get_auto_envio_runtime()
+                intervalo_s = max(60, int(cfg["intervalo_min"]) * 60)
+                if cfg["ativo"]:
+                    _ciclo_auto_envio(cfg)
+            except Exception as e:  # noqa: BLE001 — best-effort, não morre
+                logger.warning("worker auto-envio: ciclo falhou: %s", e)
+                db.set_config("auto_ultimo_resultado", f"erro: {str(e)[:120]}")
+            _time.sleep(intervalo_s)
+
+    threading.Thread(target=_loop, name="auto-envio", daemon=True).start()
+    logger.info("worker de envio automático ligado")
+
+
 def mapa_tipos() -> dict:
     """Todos os tipos padrão indexados por código — 1 query em vez de N.
 

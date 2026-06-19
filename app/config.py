@@ -111,6 +111,37 @@ def uazapi_configurado() -> bool:
     return bool(sub and tok)
 
 
+def get_auto_envio_runtime() -> dict:
+    """Configuração do envio automático por gatilho do G-Click (SQLite > default).
+
+    Chaves no config_runtime:
+      auto_envio_ativo    — '1'/'0' (default '0', desligado)
+      auto_gatilho        — 'enviar_cliente' (default) | 'concluida'
+      auto_intervalo_min  — minutos entre ciclos do worker (default 15)
+      auto_ativado_em     — ISO do momento em que ligou (data de corte; lida no worker)
+    """
+    from . import db
+    ativo = (db.get_config("auto_envio_ativo", "0") or "0") == "1"
+    gatilho = db.get_config("auto_gatilho", "enviar_cliente") or "enviar_cliente"
+    if gatilho not in ("enviar_cliente", "concluida"):
+        gatilho = "enviar_cliente"
+    try:
+        intervalo = int(db.get_config("auto_intervalo_min", "15"))
+    except (TypeError, ValueError):
+        intervalo = 15
+    return {"ativo": ativo, "gatilho": gatilho, "intervalo_min": max(1, intervalo)}
+
+
+def get_piloto_runtime() -> dict:
+    """Modo piloto do envio AUTOMÁTICO: quando ativo, toda liberação da Caixa de
+    Saída é redirecionada para um número de teste (ignora os reais). NÃO afeta o
+    envio manual. Chaves: auto_piloto_ativo ('1'/'0'), auto_piloto_numero."""
+    from . import db
+    ativo = (db.get_config("auto_piloto_ativo", "0") or "0") == "1"
+    numero = (db.get_config("auto_piloto_numero", "") or "").strip()
+    return {"ativo": ativo and bool(numero), "numero": numero}
+
+
 def get_throttle_runtime() -> dict:
     """Configurações de ritmo de envio. SQLite (config_runtime) tem prioridade;
     fallback nas constantes derivadas do .env.

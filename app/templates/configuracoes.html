@@ -144,6 +144,69 @@
   </p>
 </div>
 
+<!-- ============== Envio automático por gatilho (Fase 2) ============== -->
+<div class="card" style="max-width:780px;margin-top:20px">
+  <h2>⚡ Envio automático</h2>
+  <p style="font-size:13px;color:#666;margin-bottom:14px">
+    Quando a guia é liberada ao cliente no G-Click, o sistema a coloca na
+    <strong>📤 Caixa de Saída</strong> para sua aprovação — <strong>nada vai ao
+    WhatsApp sem você liberar</strong>. Só considera clientes com <strong>Envio
+    automático</strong> ligado (tela Clientes).
+  </p>
+  <form method="post" action="/configuracoes/auto-envio">
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <input type="checkbox" name="auto_envio_ativo" value="1" {% if auto.ativo %}checked{% endif %}>
+      <strong>Ativar envio automático</strong>
+    </label>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:13px;color:#444">Gatilho:</label><br>
+      <select name="auto_gatilho" style="padding:7px;border:1px solid #d1d5da;border-radius:4px;min-width:320px">
+        <option value="enviar_cliente" {% if auto.gatilho == 'enviar_cliente' %}selected{% endif %}>
+          Enviar para o Cliente respondida (recomendado — equivale ao e-mail)
+        </option>
+        <option value="concluida" {% if auto.gatilho == 'concluida' %}selected{% endif %}>
+          Tarefa concluída (status C) — mais abrangente
+        </option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label style="font-size:13px;color:#444">Intervalo de verificação (min):</label>
+      <input type="number" name="auto_intervalo_min" min="1" value="{{ auto.intervalo_min }}"
+             style="width:80px;padding:7px;border:1px solid #d1d5da;border-radius:4px">
+    </div>
+
+    <div style="border:1px dashed #f59e0b;background:#fffbeb;border-radius:8px;padding:12px;margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="auto_piloto_ativo" value="1" {% if piloto.ativo %}checked{% endif %}>
+        <strong>🧪 Modo piloto (teste)</strong>
+      </label>
+      <p style="font-size:12px;color:#92400e;margin:8px 0">
+        Quando ligado, <strong>todo envio automático</strong> (ao liberar na Caixa de Saída)
+        vai para o número de teste abaixo, <strong>ignorando os números reais</strong> dos
+        clientes. Desligado, o automático usa os números cadastrados. O <strong>envio
+        manual nunca é afetado</strong> — sempre vai para os números reais.
+      </p>
+      <label style="font-size:13px;color:#444">Número de teste (55 + DDD + 9 dígitos):</label><br>
+      <input type="text" name="auto_piloto_numero" value="{{ piloto_numero }}"
+             placeholder="5511984630568"
+             style="width:220px;padding:7px;border:1px solid #d1d5da;border-radius:4px">
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-sm">Salvar</button>
+  </form>
+
+  <div style="font-size:12px;color:#666;margin-top:14px;border-top:1px solid #eee;padding-top:10px">
+    {% if auto.ativo %}<span style="color:#166534;font-weight:600">● Ativo</span>{% else %}<span style="color:#999">○ Desligado</span>{% endif %}
+    {% if auto_ativado_em %} · corte: {{ auto_ativado_em[:16].replace('T',' ') }}{% endif %}
+    {% if auto_ultima_exec %}<br>Última verificação: {{ auto_ultima_exec[:16].replace('T',' ') }} — {{ auto_ultimo_resultado or '—' }}{% endif %}
+  </div>
+  <p style="font-size:12px;color:#92400e;margin-top:10px">
+    ⚠ Ao ligar, só considera guias liberadas a partir de agora (não enfileira o histórico).
+  </p>
+</div>
+
 <!-- ============== Ritmo de envio (anti-bloqueio do número) ============== -->
 <div class="card" style="max-width:780px">
   <h2>🐌 Ritmo de envio (anti-bloqueio)</h2>

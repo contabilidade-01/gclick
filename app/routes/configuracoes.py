@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, config, db, uazapi
+from .. import auth, config, db, helpers, uazapi
 from ..templating import templates
 
 router = APIRouter()
@@ -70,9 +70,65 @@ def configuracoes_get(request: Request,
         "throttle": throttle,
         "throttle_origem": throttle_origem,
         "fila_uazapi": fila_uazapi,
+        # Envio automático por gatilho (Fase 2)
+        "auto": config.get_auto_envio_runtime(),
+        "auto_ativado_em": db.get_config("auto_ativado_em"),
+        "auto_ultima_exec": db.get_config("auto_ultima_exec"),
+        "auto_ultimo_resultado": db.get_config("auto_ultimo_resultado"),
+        "piloto": config.get_piloto_runtime(),
+        "piloto_numero": db.get_config("auto_piloto_numero", "") or "",
         "sucesso": sucesso,
         "erro": erro,
     })
+
+
+@router.post("/configuracoes/auto-envio")
+async def configuracoes_auto_envio(request: Request,
+                                   auto_envio_ativo: str = Form("0"),
+                                   auto_gatilho: str = Form("enviar_cliente"),
+                                   auto_intervalo_min: str = Form("15"),
+                                   auto_piloto_ativo: str = Form("0"),
+                                   auto_piloto_numero: str = Form("")):
+    """Salva a configuração do envio automático. Ao LIGAR pela 1ª vez, grava a
+    data de corte (`auto_ativado_em`) — evita disparar o histórico retroativo."""
+    if redir := auth.requer_login(request):
+        return redir
+    usuario = auth.usuario_da_requisicao(request) or "?"
+
+    ativo = "1" if auto_envio_ativo.strip() in ("1", "on", "true") else "0"
+    gatilho = auto_gatilho.strip()
+    if gatilho not in ("enviar_cliente", "concluida"):
+        gatilho = "enviar_cliente"
+    try:
+        intervalo = max(1, int(auto_intervalo_min))
+    except ValueError:
+        intervalo = 15
+
+    estava_ativo = (db.get_config("auto_envio_ativo", "0") or "0") == "1"
+    db.set_config("auto_envio_ativo", ativo, usuario)
+    db.set_config("auto_gatilho", gatilho, usuario)
+    db.set_config("auto_intervalo_min", str(intervalo), usuario)
+    # Data de corte: grava no momento em que LIGA (transição desligado -> ligado).
+    if ativo == "1" and not estava_ativo:
+        db.set_config("auto_ativado_em", db.agora_iso(), usuario)
+
+    # Modo piloto (só afeta o envio AUTOMÁTICO). Número só é aceito se for celular
+    # BR válido — evita ligar o piloto apontando para lugar nenhum.
+    piloto_num = "".join(ch for ch in auto_piloto_numero if ch.isdigit())
+    piloto_on = auto_piloto_ativo.strip() in ("1", "on", "true")
+    if piloto_num:
+        ok_num, motivo = helpers.validar_whatsapp_br(piloto_num)
+        if not ok_num:
+            return RedirectResponse(
+                url="/configuracoes?erro=Numero+do+piloto+invalido+(use+55+DDD+9+digitos)",
+                status_code=303,
+            )
+        db.set_config("auto_piloto_numero", piloto_num, usuario)
+    db.set_config("auto_piloto_ativo", "1" if (piloto_on and piloto_num) else "0", usuario)
+
+    return RedirectResponse(
+        url="/configuracoes?sucesso=Envio+automatico+salvo", status_code=303,
+    )
 
 
 @router.post("/configuracoes/uazapi")

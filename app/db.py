@@ -96,6 +96,30 @@ CREATE TABLE IF NOT EXISTS acessos_documento (
 
 CREATE INDEX IF NOT EXISTS idx_acessos_envio
   ON acessos_documento(envio_id, evento, eh_bot);
+
+-- Caixa de Saída do envio automático: o gatilho NÃO envia direto; ele enfileira
+-- aqui as guias elegíveis e o operador APROVA antes de ir ao WhatsApp.
+-- UNIQUE garante que a mesma guia nunca é enfileirada 2× (dedup automático).
+CREATE TABLE IF NOT EXISTS aprovacoes_pendentes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cnpj TEXT NOT NULL,
+  cliente_apelido TEXT,
+  tarefa_id TEXT NOT NULL,
+  atividade_id TEXT NOT NULL,
+  atividade_nome TEXT,
+  obrigacao_nome TEXT,
+  arquivo_nome TEXT,
+  arquivo_url TEXT,
+  competencia TEXT,
+  data_vencimento TEXT,
+  detectado_em TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pendente',   -- 'pendente' | 'aprovado' | 'descartado'
+  resolvido_em TEXT,
+  UNIQUE(cnpj, tarefa_id, atividade_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_aprovacoes_status
+  ON aprovacoes_pendentes(status);
 """
 
 # Tipos padrao pre-populados com matchers iniciais baseados nos nomes que
@@ -401,6 +425,67 @@ def listar_acessos(envio_id: int) -> list[sqlite3.Row]:
             "SELECT * FROM acessos_documento WHERE envio_id=? ORDER BY acessado_em DESC",
             (envio_id,),
         ))
+
+
+# ---------- Caixa de Saída (aprovação manual do envio automático) ----------
+
+def enfileirar_aprovacao(g: dict) -> bool:
+    """Coloca uma guia elegível na fila de aprovação. Idempotente: se a guia já
+    foi enfileirada antes (qualquer status), o INSERT OR IGNORE não duplica.
+    Retorna True se inseriu uma nova linha."""
+    with conn() as c:
+        cur = c.execute(
+            """INSERT OR IGNORE INTO aprovacoes_pendentes
+               (cnpj, cliente_apelido, tarefa_id, atividade_id, atividade_nome,
+                obrigacao_nome, arquivo_nome, arquivo_url, competencia,
+                data_vencimento, detectado_em, status)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pendente')""",
+            (g.get("cnpj") or "", g.get("cliente_apelido"), g["tarefa_id"],
+             g["atividade_id"], g.get("atividade_nome"), g.get("obrigacao_nome"),
+             g.get("arquivo_nome"), g.get("arquivo_url"), g.get("competencia"),
+             g.get("data_vencimento"), agora_iso()),
+        )
+        return cur.rowcount > 0
+
+
+def listar_aprovacoes_pendentes() -> list[sqlite3.Row]:
+    with conn() as c:
+        return list(c.execute(
+            "SELECT * FROM aprovacoes_pendentes WHERE status='pendente' "
+            "ORDER BY detectado_em DESC"
+        ))
+
+
+def contar_aprovacoes_pendentes() -> int:
+    with conn() as c:
+        return c.execute(
+            "SELECT COUNT(*) FROM aprovacoes_pendentes WHERE status='pendente'"
+        ).fetchone()[0]
+
+
+def get_aprovacoes_por_ids(ids: list[int]) -> list[sqlite3.Row]:
+    if not ids:
+        return []
+    ph = ",".join("?" * len(ids))
+    with conn() as c:
+        return list(c.execute(
+            f"SELECT * FROM aprovacoes_pendentes WHERE id IN ({ph}) AND status='pendente'",
+            ids,
+        ))
+
+
+def resolver_aprovacoes(ids: list[int], status: str) -> int:
+    """Marca linhas da fila como 'aprovado' ou 'descartado'. Retorna nº afetado."""
+    if not ids or status not in ("aprovado", "descartado"):
+        return 0
+    ph = ",".join("?" * len(ids))
+    with conn() as c:
+        cur = c.execute(
+            f"UPDATE aprovacoes_pendentes SET status=?, resolvido_em=? "
+            f"WHERE id IN ({ph}) AND status='pendente'",
+            [status, agora_iso(), *ids],
+        )
+        return cur.rowcount
 
 
 # ---------- tipos padrao ----------

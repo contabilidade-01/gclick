@@ -98,7 +98,8 @@ def enviar(request: Request,
 
 def _processar_lote(alvos: list[dict],
                     whatsapp_map: dict[str, str],
-                    cfg_envio: dict) -> None:
+                    cfg_envio: dict,
+                    origem: str = "manual") -> None:
     """Loop de envio executado em thread de fundo. Atualiza `helpers.lote_*`
     a cada passo para a tela de progresso refletir."""
     throttle_s = cfg_envio["throttle_s"]
@@ -223,7 +224,7 @@ def _processar_lote(alvos: list[dict],
                         tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
                         arquivo_nome=nome_arquivo, competencia=g["competencia"],
                         uazapi_message_id=str(msg_id) if msg_id else None,
-                        status="ok",
+                        status="ok", origem=origem,
                     )
                     if token:
                         db.set_envio_token(envio_id, token)
@@ -247,7 +248,7 @@ def _processar_lote(alvos: list[dict],
                         tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
                         arquivo_nome=g["arquivo_nome"], competencia=g["competencia"],
                         uazapi_message_id=str(msg_id) if msg_id else None,
-                        status="ok",
+                        status="ok", origem=origem,
                     )
                     helpers.baixar_pdf_local(
                         envio_id, g["arquivo_url"], g["arquivo_nome"] or "documento.pdf",

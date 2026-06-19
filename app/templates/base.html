@@ -82,6 +82,8 @@
     <a href="/check" class="{{ 'active' if active=='check' else '' }}">Check de enviados</a>
     <a href="/tipos" class="{{ 'active' if active=='tipos' else '' }}">Tipos de documentos</a>
     <a href="/clientes" class="{{ 'active' if active=='clientes' else '' }}">Clientes</a>
+    {% set _pend = aprovacoes_pendentes() %}
+    <a href="/aprovacoes" class="{{ 'active' if active=='aprovacoes' else '' }}">📤 Caixa de Saída{% if _pend %} <span style="background:#22c55e;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px">{{ _pend }}</span>{% endif %}</a>
     <a href="/auditoria" class="{{ 'active' if active=='auditoria' else '' }}">Auditoria</a>
     <a href="/configuracoes" class="{{ 'active' if active=='configuracoes' else '' }}">⚙</a>
     <a href="/logout">Sair ({{ usuario }})</a>

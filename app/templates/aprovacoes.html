@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>📤 Caixa de Saída — aprovação de envio</h2>
+  <p class="resumo" style="color:#666">
+    Guias detectadas pelo gatilho do G-Click, <strong>aguardando sua liberação</strong>.
+    Nada vai ao WhatsApp até você marcar e clicar <strong>Liberar envio</strong>.
+  </p>
+
+  {% if piloto.ativo %}
+  <div class="alert" style="background:#fffbeb;border-left:4px solid #f59e0b;color:#92400e;padding:12px 16px;border-radius:6px;margin-bottom:14px">
+    🧪 <strong>Modo piloto ATIVO.</strong> Ao liberar, os envios vão para o número de teste
+    <strong>{{ piloto.numero }}</strong> — <strong>não</strong> para os clientes reais.
+  </div>
+  {% endif %}
+
+  {% if sucesso %}<div class="alert alert-info">{{ sucesso }}</div>{% endif %}
+  {% if erro %}<div class="alert alert-warn">{{ erro }}</div>{% endif %}
+
+  {% if itens %}
+  <form method="post">
+    <div style="margin:12px 0;display:flex;gap:10px;align-items:center">
+      <label style="font-size:13px;color:#444;cursor:pointer">
+        <input type="checkbox" id="chkTodos" onclick="marcarTodos(this)"> selecionar todos
+      </label>
+      <span style="flex:1"></span>
+      <button type="submit" formaction="/aprovacoes/enviar" class="btn btn-primary btn-sm"
+              onclick="return confirm('Liberar o envio das guias selecionadas para o WhatsApp?');">
+        ✅ Liberar envio
+      </button>
+      <button type="submit" formaction="/aprovacoes/descartar" class="btn btn-secondary btn-sm"
+              onclick="return confirm('Descartar as selecionadas? Não serão enviadas.');">
+        🗑 Descartar
+      </button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th>Cliente</th>
+          <th>Documento</th>
+          <th>Comp.</th>
+          <th>Vencimento</th>
+          <th>WhatsApp</th>
+          <th>Detectado em</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for it in itens %}
+        <tr>
+          <td><input type="checkbox" class="chkItem" name="ids" value="{{ it.id }}"></td>
+          <td>{{ it.cliente_apelido or it.cnpj }}<br><span style="color:#888;font-size:12px"><code>{{ it.cnpj }}</code></span></td>
+          <td>{{ it.titulo }}<br><span style="color:#888;font-size:12px">{{ it.arquivo_nome or '—' }}</span></td>
+          <td>{{ it.competencia_label }}</td>
+          <td>{{ it.vencimento_fmt or '—' }}</td>
+          <td>
+            {% if it.whatsapp %}{{ it.whatsapp }}
+            {% else %}<span style="color:#cf3a3a" title="Cliente sem WhatsApp — não será enviado">⚠ sem WhatsApp</span>{% endif %}
+          </td>
+          <td style="font-size:12px;color:#666">{{ it.detectado_fmt }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </form>
+  {% else %}
+  <div style="text-align:center;color:#888;padding:40px">
+    Nenhuma guia aguardando aprovação.<br>
+    <span style="font-size:13px">Quando o gatilho do G-Click detectar guias liberadas (para as empresas com envio automático ligado), elas aparecem aqui.</span>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  function marcarTodos(chk) {
+    document.querySelectorAll('.chkItem').forEach(c => c.checked = chk.checked);
+  }
+</script>
+{% endblock %}
