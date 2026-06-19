@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -76,6 +77,25 @@ CREATE TABLE IF NOT EXISTS config_runtime (
 
 CREATE INDEX IF NOT EXISTS idx_ocultas_cnpj
   ON tarefas_ocultas(cnpj, tarefa_id);
+
+-- Rastreio de acesso aos documentos enviados por LINK (/g/{token}).
+-- Append-only: é a prova de quando/onde o cliente abriu/baixou. Nunca apagar.
+CREATE TABLE IF NOT EXISTS acessos_documento (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  envio_id INTEGER NOT NULL,
+  token TEXT NOT NULL,
+  evento TEXT NOT NULL,          -- 'pagina' (abriu a página) | 'download' (baixou o PDF)
+  ip TEXT,
+  cidade TEXT,
+  estado TEXT,
+  pais TEXT,
+  user_agent TEXT,
+  eh_bot INTEGER DEFAULT 0,      -- 1 = preview do WhatsApp/Meta (não conta como abertura real)
+  acessado_em TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_acessos_envio
+  ON acessos_documento(envio_id, evento, eh_bot);
 """
 
 # Tipos padrao pre-populados com matchers iniciais baseados nos nomes que
@@ -153,6 +173,8 @@ def init() -> None:
             c.execute("ALTER TABLE envios ADD COLUMN vencimento_gclick TEXT")
         if "origem" not in cols_env:
             c.execute("ALTER TABLE envios ADD COLUMN origem TEXT DEFAULT 'manual'")
+        if "token_publico" not in cols_env:
+            c.execute("ALTER TABLE envios ADD COLUMN token_publico TEXT")
         # Colunas extras em `tipos_padrao` (template + flag de vencimento)
         cols_tp = {r["name"] for r in c.execute("PRAGMA table_info(tipos_padrao)")}
         if "template_mensagem" not in cols_tp:
@@ -274,6 +296,12 @@ def set_envio_pdf_local(envio_id: int, caminho: str) -> None:
         c.execute("UPDATE envios SET pdf_local_path=? WHERE id=?", (caminho, envio_id))
 
 
+def set_envio_token(envio_id: int, token: str) -> None:
+    """Grava o token público (link rastreado) gerado para este envio."""
+    with conn() as c:
+        c.execute("UPDATE envios SET token_publico=? WHERE id=?", (token, envio_id))
+
+
 def set_envio_vencimentos(envio_id: int, venc_pdf: str | None,
                           venc_gclick: str | None) -> None:
     with conn() as c:
@@ -292,6 +320,86 @@ def listar_envios(limit: int = 200) -> list[sqlite3.Row]:
     with conn() as c:
         return list(c.execute(
             "SELECT * FROM envios ORDER BY id DESC LIMIT ?", (limit,)
+        ))
+
+
+# ---------- rastreio de documentos (link /g/{token}) ----------
+
+def garantir_token_publico(envio_id: int) -> str:
+    """Garante que o envio tenha um token público (opaco, não-enumerável) e o
+    retorna. Idempotente: se já existe, devolve o mesmo. Usado para montar o
+    link rastreado que vai no WhatsApp."""
+    with conn() as c:
+        row = c.execute(
+            "SELECT token_publico FROM envios WHERE id=?", (envio_id,)
+        ).fetchone()
+        if row and row["token_publico"]:
+            return row["token_publico"]
+        token = secrets.token_urlsafe(16)
+        c.execute("UPDATE envios SET token_publico=? WHERE id=?", (token, envio_id))
+        return token
+
+
+def get_envio_por_token(token: str) -> sqlite3.Row | None:
+    if not token:
+        return None
+    with conn() as c:
+        return c.execute(
+            "SELECT * FROM envios WHERE token_publico=?", (token,)
+        ).fetchone()
+
+
+def registrar_acesso(*, envio_id: int, token: str, evento: str,
+                     ip: str | None = None, cidade: str | None = None,
+                     estado: str | None = None, pais: str | None = None,
+                     user_agent: str | None = None, eh_bot: int = 0) -> None:
+    """Grava um acesso ao documento (append-only). `evento`: 'pagina'|'download'."""
+    with conn() as c:
+        c.execute(
+            """INSERT INTO acessos_documento
+               (envio_id, token, evento, ip, cidade, estado, pais,
+                user_agent, eh_bot, acessado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (envio_id, token, evento, ip, cidade, estado, pais,
+             (user_agent or "")[:300], eh_bot, agora_iso()),
+        )
+
+
+def acessos_por_envio(envio_ids: list[int]) -> dict[int, dict]:
+    """Resumo de acessos REAIS (não-bot) para vários envios — 1 query (evita N+1).
+    Retorna {envio_id: {aberturas, downloads, ultimo_em, ultima_cidade}}."""
+    if not envio_ids:
+        return {}
+    placeholders = ",".join("?" * len(envio_ids))
+    with conn() as c:
+        rows = list(c.execute(
+            f"""SELECT envio_id, evento, cidade, estado, acessado_em
+                FROM acessos_documento
+                WHERE eh_bot=0 AND envio_id IN ({placeholders})
+                ORDER BY acessado_em""",
+            envio_ids,
+        ))
+    out: dict[int, dict] = {}
+    for r in rows:
+        d = out.setdefault(r["envio_id"], {
+            "aberturas": 0, "downloads": 0, "ultimo_em": None, "ultima_cidade": None,
+        })
+        if r["evento"] == "pagina":
+            d["aberturas"] += 1
+        elif r["evento"] == "download":
+            d["downloads"] += 1
+        d["ultimo_em"] = r["acessado_em"]
+        if r["cidade"]:
+            d["ultima_cidade"] = f"{r['cidade']}/{r['estado']}" if r["estado"] else r["cidade"]
+    return out
+
+
+def listar_acessos(envio_id: int) -> list[sqlite3.Row]:
+    """Timeline completa de acessos de um envio (inclui os marcados como bot)."""
+    with conn() as c:
+        return list(c.execute(
+            "SELECT * FROM acessos_documento WHERE envio_id=? ORDER BY acessado_em DESC",
+            (envio_id,),
         ))
 
 

@@ -270,6 +270,62 @@ def baixar_pdf_local(envio_id: int, file_url: str, arquivo_nome: str,
     return rel
 
 
+# ---------- rastreio de acesso: detecção de bot + geo-IP ----------
+
+# User-agents de previews/crawlers — NÃO é o cliente abrindo de verdade.
+# O preview do WhatsApp/Meta bate no link ao receber a mensagem; isso não pode
+# contar como "abertura real".
+_BOT_UAS = ("whatsapp", "facebookexternalhit", "facebot", "telegrambot",
+            "twitterbot", "slackbot", "discordbot", "linkedinbot", "bingbot",
+            "googlebot", "bot", "crawler", "spider", "preview", "curl",
+            "wget", "python-httpx", "headless")
+
+
+def eh_user_agent_bot(ua: str | None) -> bool:
+    """True se o user-agent parece preview/crawler (WhatsApp/Meta/etc.).
+    Sem user-agent também é tratado como suspeito (não conta como abertura real)."""
+    if not ua:
+        return True
+    u = ua.lower()
+    return any(b in u for b in _BOT_UAS)
+
+
+_geo_cache: dict[str, dict] = {}
+
+
+def geo_ip(ip: str | None) -> dict:
+    """Cidade/estado/país de um IP via ip-api.com (grátis, sem chave).
+    Best-effort: cacheado por IP, timeout curto, falha silenciosa. NUNCA quebra
+    o acesso ao documento — geo é só enriquecimento."""
+    vazio = {"cidade": None, "estado": None, "pais": None}
+    if not ip or ip in ("127.0.0.1", "::1", "?", "localhost"):
+        return vazio
+    if ip in _geo_cache:
+        return _geo_cache[ip]
+    try:
+        r = httpx.get(
+            f"http://ip-api.com/json/{ip}",
+            params={"fields": "status,country,regionName,city", "lang": "pt-BR"},
+            timeout=4,
+        )
+        j = r.json() if r.status_code == 200 else {}
+        res = ({"cidade": j.get("city"), "estado": j.get("regionName"),
+                "pais": j.get("country")}
+               if j.get("status") == "success" else vazio)
+    except Exception:  # noqa: BLE001 — best-effort
+        res = vazio
+    _geo_cache[ip] = res
+    return res
+
+
+def ip_do_request(request) -> str:
+    """IP real do cliente, considerando o proxy do EasyPanel (X-Forwarded-For)."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+
 def validar_vencimento_no_pdf(g: dict) -> tuple[bytes | None, str | None]:
     """Baixa o PDF, tenta parsear o vencimento.
     Se diferente do que G-Click diz, SOBRESCREVE g['data_vencimento'] e

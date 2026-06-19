@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import threading
 import time
 
@@ -196,15 +197,22 @@ def _processar_lote(alvos: list[dict],
                 # Decide modo: anexo (PDF) ou link (texto com link curto clicável)
                 if modo_envio == "link":
                     nome_arquivo = g["arquivo_nome"] or "Documento"
-                    url_pdf = g["arquivo_url"] or ""
-                    # Botão de URL: o cliente vê "📄 Abrir documento" e clica — a
-                    # URL S3 fica escondida atrás do botão (sem encurtador externo,
-                    # sem URL gigante no texto).
+                    # Link RASTREADO próprio (/g/{token}) quando há domínio público
+                    # (PUBLIC_BASE_URL). Vantagens: NUNCA expira (serve a cópia local)
+                    # e registra quem abriu/baixou, quando e de onde. Sem domínio
+                    # público (dev local), cai no link S3 cru do G-Click (expira
+                    # ~2h, sem rastreio) — degradação segura.
+                    if config.PUBLIC_BASE_URL:
+                        token = secrets.token_urlsafe(16)
+                        link = config.url_publica(f"/g/{token}")
+                    else:
+                        token = None
+                        link = g["arquivo_url"] or ""
                     msg_texto = helpers.mensagem_documento(g)
                     resp = helpers.enviar_botao_com_retry(
                         numero=wpp, texto=msg_texto,
                         botao_texto="📄 Abrir documento",
-                        url=url_pdf,
+                        url=link,
                         footer="NESCON CONTABILIDADE",
                         delay_ms=delay_uazapi_ms,
                     )
@@ -217,9 +225,12 @@ def _processar_lote(alvos: list[dict],
                         uazapi_message_id=str(msg_id) if msg_id else None,
                         status="ok",
                     )
-                    # Backup local do PDF (agora com o envio_id correto)
+                    if token:
+                        db.set_envio_token(envio_id, token)
+                    # Backup local do PDF — é o que o /g/{token}/ver vai servir
+                    # (permanente, nunca expira).
                     helpers.baixar_pdf_local(
-                        envio_id, url_pdf, nome_arquivo,
+                        envio_id, g["arquivo_url"] or "", nome_arquivo,
                         bytes_ja_baixados=pdf_bytes,
                     )
                 else:
@@ -332,6 +343,74 @@ async def baixar_pdf_local(envio_id: int, request: Request):
     return FileResponse(
         caminho, media_type="application/pdf",
         filename=nome_dl,
+        headers={"Content-Disposition": f'inline; filename="{nome_dl}"'},
+    )
+
+
+# ===================== LINK RASTREADO (/g/{token}) =====================
+# Página pública de visualização + serviço do PDF, com registro de acesso
+# (IP, geo, user-agent), filtro de bot/preview e token opaco (não-enumerável).
+
+def _registrar_acesso_async(envio_id: int, token: str, evento: str, request: Request) -> None:
+    """Registra o acesso em background — não atrasa a resposta ao cliente.
+    Extrai IP/UA na hora (thread-safe); geo-IP + insert vão na thread."""
+    ip = helpers.ip_do_request(request)
+    ua = request.headers.get("user-agent", "")
+    eh_bot = 1 if helpers.eh_user_agent_bot(ua) else 0
+
+    def _job() -> None:
+        try:
+            geo = {} if eh_bot else helpers.geo_ip(ip)
+            db.registrar_acesso(
+                envio_id=envio_id, token=token, evento=evento, ip=ip,
+                cidade=geo.get("cidade"), estado=geo.get("estado"),
+                pais=geo.get("pais"), user_agent=ua, eh_bot=eh_bot,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("falha ao registrar acesso ao documento (envio %s)", envio_id)
+
+    threading.Thread(target=_job, daemon=True).start()
+
+
+@router.get("/g/{token}")
+def documento_pagina(token: str, request: Request):
+    """Página de visualização do documento (pública, SEM login — é o cliente).
+    Mostra a guia + botão para abrir o PDF. Registra a abertura (filtra preview)."""
+    envio = db.get_envio_por_token(token)
+    if not envio:
+        return Response("Documento não encontrado ou link inválido.", status_code=404)
+    _registrar_acesso_async(envio["id"], token, "pagina", request)
+
+    g = {
+        "arquivo_nome": envio["arquivo_nome"], "atividade_nome": "", "obrigacao_nome": "",
+        "competencia": envio["competencia"], "data_vencimento": envio["vencimento_pdf"] or "",
+    }
+    venc_iso = envio["vencimento_pdf"] if "vencimento_pdf" in envio.keys() else None
+    return templates.TemplateResponse(request, "documento_publico.html", {
+        "request": request,
+        "titulo": helpers.titulo_documento(g),
+        "competencia": helpers.competencia_label(envio["competencia"] or ""),
+        "vencimento": helpers.fmt_data(venc_iso) if venc_iso else "",
+        "token": token,
+    })
+
+
+@router.get("/g/{token}/ver")
+def documento_pdf(token: str, request: Request):
+    """Serve o PDF (cópia local, permanente) e registra o download."""
+    envio = db.get_envio_por_token(token)
+    if not envio:
+        return Response("Documento não encontrado.", status_code=404)
+    pdf_path = envio["pdf_local_path"] if "pdf_local_path" in envio.keys() else None
+    if not pdf_path:
+        return Response("Documento sem cópia disponível.", status_code=404)
+    caminho = config.PASTA_GUIAS.parent / pdf_path
+    if not caminho.exists():
+        return Response("Arquivo não encontrado.", status_code=410)
+    _registrar_acesso_async(envio["id"], token, "download", request)
+    nome_dl = envio["arquivo_nome"] or "documento.pdf"
+    return FileResponse(
+        caminho, media_type="application/pdf", filename=nome_dl,
         headers={"Content-Disposition": f'inline; filename="{nome_dl}"'},
     )
 
@@ -454,16 +533,24 @@ def reenviar(request: Request, envio_id: int = Form(...)):
         modo_envio = cfg.get("modo_envio", "anexo")
         delay_ms = cfg["delay_uazapi_ms"]
         if modo_envio == "link":
-            # Mesmo formato da fila: botão "Abrir documento" apontando pro PDF.
+            # Mesmo formato da fila: botão "Abrir documento" com link RASTREADO
+            # (/g/{token}) quando há domínio público; senão cai no S3 cru (dev).
             msg_texto = helpers.mensagem_documento(g)
+            if config.PUBLIC_BASE_URL:
+                token = secrets.token_urlsafe(16)
+                link = config.url_publica(f"/g/{token}")
+            else:
+                token = None
+                link = file_url
             resp = helpers.enviar_botao_com_retry(
                 numero=wpp, texto=msg_texto,
                 botao_texto="📄 Abrir documento",
-                url=file_url,
+                url=link,
                 footer="NESCON CONTABILIDADE",
                 delay_ms=delay_ms,
             )
         else:
+            token = None
             resp = helpers.enviar_com_retry(
                 numero=wpp, file_url=file_url,
                 doc_name=arquivo_nome, caption=caption,
@@ -476,9 +563,12 @@ def reenviar(request: Request, envio_id: int = Form(...)):
                             arquivo_nome=arquivo_nome, competencia=competencia,
                             uazapi_message_id=str(msg_id) if msg_id else None,
                             status="ok", erro=f"Reenvio {modo_envio} ({fonte})")
-        # Backup local também no reenvio (se veio do G-Click; do local já está salvo)
+        # Backup local também no reenvio (se veio do G-Click; do local já está salvo).
+        # É o que o /g/{token}/ver vai servir (permanente).
         if fonte == "G-Click":
             helpers.baixar_pdf_local(novo_envio_id, file_url, arquivo_nome)
+        if token:
+            db.set_envio_token(novo_envio_id, token)
         # Grava vencimentos auditados
         if venc_pdf_str or venc_gclick_str:
             db.set_envio_vencimentos(novo_envio_id, venc_pdf_str, venc_gclick_str)

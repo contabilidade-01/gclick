@@ -10,8 +10,6 @@ def test_validar_whatsapp_br_validos():
     assert ok
     ok, _ = helpers.validar_whatsapp_br("+55 (11) 96323-4599")  # com máscara
     assert ok
-    ok, _ = helpers.validar_whatsapp_br("553133334444")    # fixo 8 dígitos
-    assert ok
 
 
 def test_validar_whatsapp_br_invalidos():
@@ -19,6 +17,9 @@ def test_validar_whatsapp_br_invalidos():
     assert not helpers.validar_whatsapp_br(None)[0]          # None
     assert not helpers.validar_whatsapp_br("11963234599")[0]  # sem DDI 55
     assert not helpers.validar_whatsapp_br("5500963234599")[0]  # DDD inválido
+    # Fixo (12 dígitos, sem o 9) é rejeitado — guia só vai para celular.
+    ok, motivo = helpers.validar_whatsapp_br("553133334444")
+    assert not ok and "FIXO" in motivo
 
 
 def test_range_competencia():

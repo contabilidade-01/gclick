@@ -26,6 +26,7 @@
         <th>WhatsApp</th>
         <th>Comp.</th>
         <th>Status</th>
+        <th>Rastreio</th>
         <th>uazapi id / erro</th>
         <th></th>
       </tr>
@@ -56,6 +57,16 @@
           {% elif e.status == 'simulado' %}<span class="badge badge-pend">simulado</span>
           {% else %}<span class="badge badge-warn">{{ e.status }}</span>{% endif %}
         </td>
+        <td style="font-size:12px;white-space:nowrap">
+          {% if e.acesso %}
+            {% if e.acesso.aberturas %}<div style="color:#166534;font-weight:600" title="Cliente abriu a página do documento">👁 {{ e.acesso.aberturas }} abertura{{ 's' if e.acesso.aberturas > 1 else '' }}</div>{% endif %}
+            {% if e.acesso.downloads %}<div style="color:#1e40af" title="Cliente abriu/baixou o PDF">⬇ {{ e.acesso.downloads }} download{{ 's' if e.acesso.downloads > 1 else '' }}</div>{% endif %}
+            {% if e.acesso.ultima_cidade %}<div style="color:#999">📍 {{ e.acesso.ultima_cidade }}</div>{% endif %}
+            {% if e.acesso.ultimo_em %}<div style="color:#999">🕓 {{ e.acesso.ultimo_em[:16].replace('T',' ') }}</div>{% endif %}
+          {% else %}
+            <span style="color:#bbb" title="Ainda não aberto (ou enviado como anexo)">—</span>
+          {% endif %}
+        </td>
         <td style="font-size:12px;color:#666;max-width:280px;word-break:break-all">{{ e.uazapi_message_id or e.erro or '' }}</td>
         <td style="white-space:nowrap">
           <form method="post" action="/reenviar" style="margin:0;display:inline">
@@ -68,7 +79,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="9" style="text-align:center;color:#888;padding:30px">Nenhum envio registrado ainda.</td></tr>
+      <tr><td colspan="10" style="text-align:center;color:#888;padding:30px">Nenhum envio registrado ainda.</td></tr>
     {% endfor %}
     </tbody>
   </table>

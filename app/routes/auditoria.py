@@ -21,7 +21,14 @@ async def auditoria(request: Request,
         return redir
     usuario = auth.usuario_da_requisicao(request)
     envios = db.listar_envios(500)
-    envios_view = [{**dict(e), "enviado_em_fmt": helpers.fmt_dt(e["enviado_em"])} for e in envios]
+    # Resumo de aberturas/downloads do link rastreado (1 query — evita N+1).
+    acessos = db.acessos_por_envio([e["id"] for e in envios])
+    envios_view = [
+        {**dict(e),
+         "enviado_em_fmt": helpers.fmt_dt(e["enviado_em"]),
+         "acesso": acessos.get(e["id"])}
+        for e in envios
+    ]
     # Banner crítico — quantos token_invalido nas últimas 24h
     limite = (datetime.now(timezone.utc).replace(tzinfo=None)
               - timedelta(hours=24)).isoformat(timespec="seconds")

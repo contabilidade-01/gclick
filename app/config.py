@@ -64,6 +64,11 @@ SECRET_KEY = _env("SECRET_KEY", "dev-trocar-no-deploy")
 APP_HOST = _env("APP_HOST", "127.0.0.1")
 APP_PORT = int(_env("APP_PORT", "8000"))
 
+# URL pública do app (produção). Usada para montar os links rastreados
+# (/g/{token}) que vão no WhatsApp. Local: vazio → deriva do host da requisição.
+# VPS: setar ex. PUBLIC_BASE_URL=https://guias.gestaoempresa.com
+PUBLIC_BASE_URL = (_env("PUBLIC_BASE_URL") or "").rstrip("/")
+
 # Anti-bloqueio do número no WhatsApp:
 # - throttle: pausa (segundos) entre dois envios reais consecutivos.
 # - teto/hora: máximo de envios reais por hora (janela deslizante em memória).
@@ -85,6 +90,20 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "dados.db"
 PASTA_GUIAS = DATA_DIR / "guias"
 PASTA_GUIAS.mkdir(parents=True, exist_ok=True)
+
+
+def url_publica(path: str, request=None) -> str:
+    """URL absoluta pública para `path` (ex.: '/g/abc' → 'https://.../g/abc').
+
+    Usa PUBLIC_BASE_URL (deploy) quando setado; senão deriva do host da
+    requisição (`request.base_url`) — útil em desenvolvimento local.
+    """
+    if not path.startswith("/"):
+        path = "/" + path
+    base = PUBLIC_BASE_URL
+    if not base and request is not None:
+        base = str(request.base_url).rstrip("/")
+    return f"{base}{path}"
 
 
 def uazapi_configurado() -> bool:
