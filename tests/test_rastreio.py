@@ -29,15 +29,14 @@ def test_get_envio_por_token_invalido():
 def test_acessos_conta_aberturas_e_downloads():
     envio_id = _novo_envio()
     token = db.garantir_token_publico(envio_id)
-    db.registrar_acesso(envio_id=envio_id, token=token, evento="pagina",
-                        ip="8.8.8.8", cidade="São Paulo", estado="SP", pais="Brasil")
     db.registrar_acesso(envio_id=envio_id, token=token, evento="pagina", ip="8.8.8.8")
-    db.registrar_acesso(envio_id=envio_id, token=token, evento="download", ip="8.8.8.8")
+    db.registrar_acesso(envio_id=envio_id, token=token, evento="pagina", ip="8.8.8.8")
+    db.registrar_acesso(envio_id=envio_id, token=token, evento="download", ip="187.1.2.3")
 
     resumo = db.acessos_por_envio([envio_id])[envio_id]
     assert resumo["aberturas"] == 2
     assert resumo["downloads"] == 1
-    assert resumo["ultima_cidade"] == "São Paulo/SP"
+    assert resumo["ultimo_ip"] == "187.1.2.3"  # IP do último acesso
 
 
 def test_acessos_ignora_bots():

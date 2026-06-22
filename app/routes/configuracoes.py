@@ -77,6 +77,9 @@ def configuracoes_get(request: Request,
         "auto_ultimo_resultado": db.get_config("auto_ultimo_resultado"),
         "piloto": config.get_piloto_runtime(),
         "piloto_numero": db.get_config("auto_piloto_numero", "") or "",
+        "limpeza": config.get_limpeza_runtime(),
+        "limpeza_ultima_exec": db.get_config("limpeza_ultima_exec"),
+        "limpeza_ultimo_resultado": db.get_config("limpeza_ultimo_resultado"),
         "sucesso": sucesso,
         "erro": erro,
     })
@@ -290,6 +293,36 @@ async def configuracoes_uazapi_limpar_fila(request: Request):
         url=f"/configuracoes?erro=Falhou+ao+limpar+fila+({r.get('categoria')})",
         status_code=303,
     )
+
+
+@router.post("/configuracoes/limpeza")
+async def configuracoes_limpeza(request: Request,
+                                limpeza_ativa: str = Form("0"),
+                                limpeza_intervalo_h: str = Form("24")):
+    """Salva a config da limpeza automática (liga/desliga + frequência)."""
+    if redir := auth.requer_login(request):
+        return redir
+    usuario = auth.usuario_da_requisicao(request) or "?"
+    ativa = "1" if limpeza_ativa.strip() in ("1", "on", "true") else "0"
+    try:
+        intervalo = max(1, int(limpeza_intervalo_h))
+    except ValueError:
+        intervalo = 24
+    db.set_config("limpeza_ativa", ativa, usuario)
+    db.set_config("limpeza_intervalo_h", str(intervalo), usuario)
+    return RedirectResponse(url="/configuracoes?sucesso=Limpeza+salva", status_code=303)
+
+
+@router.post("/configuracoes/limpeza/rodar")
+async def configuracoes_limpeza_rodar(request: Request):
+    """Roda a limpeza AGORA (apaga PDFs com +6 meses)."""
+    if redir := auth.requer_login(request):
+        return redir
+    n = helpers.limpar_pdfs_antigos()
+    db.set_config("limpeza_ultima_exec", db.agora_iso())
+    db.set_config("limpeza_ultimo_resultado", f"{n} arquivo(s) removido(s)")
+    return RedirectResponse(
+        url=f"/configuracoes?sucesso={n}+arquivo(s)+antigo(s)+removido(s)", status_code=303)
 
 
 @router.post("/configuracoes/modo-envio")

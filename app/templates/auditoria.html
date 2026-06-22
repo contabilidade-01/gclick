@@ -61,8 +61,8 @@
           {% if e.acesso %}
             {% if e.acesso.aberturas %}<div style="color:#166534;font-weight:600" title="Cliente abriu a página do documento">👁 {{ e.acesso.aberturas }} abertura{{ 's' if e.acesso.aberturas > 1 else '' }}</div>{% endif %}
             {% if e.acesso.downloads %}<div style="color:#1e40af" title="Cliente abriu/baixou o PDF">⬇ {{ e.acesso.downloads }} download{{ 's' if e.acesso.downloads > 1 else '' }}</div>{% endif %}
-            {% if e.acesso.ultima_cidade %}<div style="color:#999">📍 {{ e.acesso.ultima_cidade }}</div>{% endif %}
             {% if e.acesso.ultimo_em %}<div style="color:#999">🕓 {{ e.acesso.ultimo_em[:16].replace('T',' ') }}</div>{% endif %}
+            {% if e.acesso.ultimo_ip %}<div style="color:#999">🌐 {{ e.acesso.ultimo_ip }}</div>{% endif %}
           {% else %}
             <span style="color:#bbb" title="Ainda não aberto (ou enviado como anexo)">—</span>
           {% endif %}
@@ -76,6 +76,15 @@
               🔁 Reenviar
             </button>
           </form>
+          {% if e.pdf_local_path %}
+          <form method="post" action="/auditoria/excluir-pdf" style="margin:0;display:inline">
+            <input type="hidden" name="envio_id" value="{{ e.id }}">
+            <button class="btn btn-sm" type="submit" style="background:#fde8e8;color:#9b1c1c"
+                    onclick="return confirm('Excluir o arquivo PDF guardado deste envio? O registro permanece, mas o link rastreado deixará de abrir.');">
+              🗑 Excluir arquivo
+            </button>
+          </form>
+          {% endif %}
         </td>
       </tr>
     {% else %}

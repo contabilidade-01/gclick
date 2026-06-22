@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import auth, db, helpers
 from ..templating import templates
@@ -45,3 +45,13 @@ async def auditoria(request: Request,
         "sucesso": sucesso,
         "erro": erro,
     })
+
+
+@router.post("/auditoria/excluir-pdf")
+async def excluir_pdf(request: Request, envio_id: int = Form(...)):
+    """Exclusão manual: apaga o PDF guardado na VPS deste envio. O registro de
+    auditoria permanece — depois disso o link rastreado deixa de servir o arquivo."""
+    if redir := auth.requer_login(request):
+        return redir
+    helpers.excluir_pdf_envio(envio_id)
+    return RedirectResponse(url="/auditoria?sucesso=Arquivo+excluido", status_code=303)

@@ -94,6 +94,10 @@ def clientes_get(request: Request, sync: str | None = None,
         clientes_f = [c for c in clientes_view if fora_padrão_whatsapp(c)]
     elif filtro == "auto":
         clientes_f = [c for c in clientes_view if c.get("envio_automatico")]
+    elif filtro == "enviaveis":
+        # Ativos E com WhatsApp — sem os desativados e sem os sem-telefone.
+        clientes_f = [c for c in clientes_view
+                      if c.get("ativo") and (c.get("whatsapp") or "").strip()]
     else:
         clientes_f = clientes_view
 
@@ -101,6 +105,8 @@ def clientes_get(request: Request, sync: str | None = None,
     total_desativados = sum(1 for c in clientes_view if not c.get("ativo"))
     total_fora_padrao = sum(1 for c in clientes_view if fora_padrão_whatsapp(c))
     total_auto = sum(1 for c in clientes_view if c.get("envio_automatico"))
+    total_enviaveis = sum(1 for c in clientes_view
+                          if c.get("ativo") and (c.get("whatsapp") or "").strip())
 
     return templates.TemplateResponse(request, "clientes.html", {
         "request": request,
@@ -112,6 +118,7 @@ def clientes_get(request: Request, sync: str | None = None,
         "total_desativados": total_desativados,
         "total_fora_padrao": total_fora_padrao,
         "total_auto": total_auto,
+        "total_enviaveis": total_enviaveis,
         "filtro": filtro or "",
         "sucesso": sucesso,
         "focus": focus,
@@ -140,11 +147,12 @@ async def cliente_editar_get(request: Request, cnpj: str, sucesso: str | None = 
     cli = db.get_cliente(cnpj)
     if not cli:
         return RedirectResponse(url="/clientes", status_code=303)
+    # dict() para o template poder usar .get() (sqlite3.Row não tem .get()).
     return templates.TemplateResponse(request, "cliente_editar.html", {
         "request": request,
         "usuario": auth.usuario_da_requisicao(request),
         "active": "clientes",
-        "cliente": cli,
+        "cliente": dict(cli),
         "sucesso": sucesso,
     })
 

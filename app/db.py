@@ -320,6 +320,21 @@ def set_envio_pdf_local(envio_id: int, caminho: str) -> None:
         c.execute("UPDATE envios SET pdf_local_path=? WHERE id=?", (caminho, envio_id))
 
 
+def envios_com_pdf_anteriores_a(corte_iso: str) -> list[sqlite3.Row]:
+    """Envios cujo PDF local foi guardado antes de `corte_iso` (para a limpeza)."""
+    with conn() as c:
+        return list(c.execute(
+            "SELECT id, pdf_local_path FROM envios "
+            "WHERE pdf_local_path IS NOT NULL AND pdf_local_path != '' "
+            "AND enviado_em < ?", (corte_iso,)))
+
+
+def limpar_pdf_local(envio_id: int) -> None:
+    """Zera o vínculo do PDF local (após apagar o arquivo). Mantém o registro."""
+    with conn() as c:
+        c.execute("UPDATE envios SET pdf_local_path=NULL WHERE id=?", (envio_id,))
+
+
 def set_envio_token(envio_id: int, token: str) -> None:
     """Grava o token público (link rastreado) gerado para este envio."""
     with conn() as c:
@@ -391,30 +406,30 @@ def registrar_acesso(*, envio_id: int, token: str, evento: str,
 
 def acessos_por_envio(envio_ids: list[int]) -> dict[int, dict]:
     """Resumo de acessos REAIS (não-bot) para vários envios — 1 query (evita N+1).
-    Retorna {envio_id: {aberturas, downloads, ultimo_em, ultima_cidade}}."""
+    Retorna {envio_id: {aberturas, downloads, ultimo_em, ultimo_ip}}."""
     if not envio_ids:
         return {}
     placeholders = ",".join("?" * len(envio_ids))
     with conn() as c:
         rows = list(c.execute(
-            f"""SELECT envio_id, evento, cidade, estado, acessado_em
+            f"""SELECT envio_id, evento, ip, acessado_em
                 FROM acessos_documento
                 WHERE eh_bot=0 AND envio_id IN ({placeholders})
-                ORDER BY acessado_em""",
+                ORDER BY acessado_em, id""",
             envio_ids,
         ))
     out: dict[int, dict] = {}
     for r in rows:
         d = out.setdefault(r["envio_id"], {
-            "aberturas": 0, "downloads": 0, "ultimo_em": None, "ultima_cidade": None,
+            "aberturas": 0, "downloads": 0, "ultimo_em": None, "ultimo_ip": None,
         })
         if r["evento"] == "pagina":
             d["aberturas"] += 1
         elif r["evento"] == "download":
             d["downloads"] += 1
         d["ultimo_em"] = r["acessado_em"]
-        if r["cidade"]:
-            d["ultima_cidade"] = f"{r['cidade']}/{r['estado']}" if r["estado"] else r["cidade"]
+        if r["ip"]:
+            d["ultimo_ip"] = r["ip"]
     return out
 
 

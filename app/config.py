@@ -132,6 +132,25 @@ def get_auto_envio_runtime() -> dict:
     return {"ativo": ativo, "gatilho": gatilho, "intervalo_min": max(1, intervalo)}
 
 
+# Retenção dos PDFs guardados na VPS: arquivos com mais que isto são apagados
+# pela limpeza automática (o REGISTRO de auditoria permanece — só o arquivo sai).
+RETENCAO_PDF_MESES = 6
+
+
+def get_limpeza_runtime() -> dict:
+    """Config da limpeza automática de PDFs antigos (SQLite > default).
+    Chaves: limpeza_ativa ('1'/'0'), limpeza_intervalo_h (de quanto em quanto
+    tempo o worker roda). A idade de retenção é fixa (RETENCAO_PDF_MESES)."""
+    from . import db
+    ativa = (db.get_config("limpeza_ativa", "1") or "1") == "1"
+    try:
+        intervalo = int(db.get_config("limpeza_intervalo_h", "24"))
+    except (TypeError, ValueError):
+        intervalo = 24
+    return {"ativa": ativa, "intervalo_h": max(1, intervalo),
+            "retencao_meses": RETENCAO_PDF_MESES}
+
+
 def get_piloto_runtime() -> dict:
     """Modo piloto do envio AUTOMÁTICO: quando ativo, toda liberação da Caixa de
     Saída é redirecionada para um número de teste (ignora os reais). NÃO afeta o

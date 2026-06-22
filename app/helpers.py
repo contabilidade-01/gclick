@@ -13,7 +13,7 @@ import threading
 import time as _time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -211,6 +211,69 @@ def iniciar_worker_auto_envio() -> None:
     logger.info("worker de envio automático ligado")
 
 
+# ---------- limpeza de PDFs antigos guardados na VPS ----------
+
+def excluir_pdf_envio(envio_id: int) -> bool:
+    """Apaga o PDF local de UM envio (mantém o registro de auditoria).
+    Usado na exclusão manual. Idempotente: se já não há arquivo, só limpa o vínculo."""
+    env = db.get_envio(envio_id)
+    if not env:
+        return False
+    pdf = env["pdf_local_path"] if "pdf_local_path" in env.keys() else None
+    if pdf:
+        caminho = config.PASTA_GUIAS.parent / pdf
+        try:
+            if caminho.exists():
+                caminho.unlink()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("falha ao apagar PDF do envio %s: %s", envio_id, e)
+    db.limpar_pdf_local(envio_id)
+    return True
+
+
+def limpar_pdfs_antigos(meses: int | None = None) -> int:
+    """Apaga os PDFs locais de envios com mais de `meses` (default = retenção
+    configurada). Mantém o registro de auditoria. Retorna quantos foram removidos."""
+    meses = meses if meses is not None else config.RETENCAO_PDF_MESES
+    corte = (datetime.now() - timedelta(days=meses * 30)).isoformat()
+    apagados = 0
+    for r in db.envios_com_pdf_anteriores_a(corte):
+        caminho = config.PASTA_GUIAS.parent / r["pdf_local_path"]
+        try:
+            if caminho.exists():
+                caminho.unlink()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("limpeza: falha ao apagar %s: %s", caminho, e)
+            continue
+        db.limpar_pdf_local(r["id"])
+        apagados += 1
+    return apagados
+
+
+def iniciar_worker_limpeza() -> None:
+    """Worker que apaga PDFs antigos periodicamente. Autocontrolado por
+    `limpeza_ativa`. Erros nunca derrubam a thread."""
+    def _loop() -> None:
+        _time.sleep(120)  # não compete com o boot
+        while True:
+            intervalo_s = 24 * 3600
+            try:
+                cfg = config.get_limpeza_runtime()
+                intervalo_s = max(3600, cfg["intervalo_h"] * 3600)
+                if cfg["ativa"]:
+                    n = limpar_pdfs_antigos()
+                    db.set_config("limpeza_ultima_exec", db.agora_iso())
+                    db.set_config("limpeza_ultimo_resultado", f"{n} arquivo(s) removido(s)")
+                    if n:
+                        logger.info("limpeza: %d PDF(s) antigo(s) removido(s)", n)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("worker limpeza: ciclo falhou: %s", e)
+            _time.sleep(intervalo_s)
+
+    threading.Thread(target=_loop, name="limpeza-pdfs", daemon=True).start()
+    logger.info("worker de limpeza de PDFs ligado")
+
+
 def mapa_tipos() -> dict:
     """Todos os tipos padrão indexados por código — 1 query em vez de N.
 
@@ -382,34 +445,6 @@ def eh_user_agent_bot(ua: str | None) -> bool:
         return True
     u = ua.lower()
     return any(b in u for b in _BOT_UAS)
-
-
-_geo_cache: dict[str, dict] = {}
-
-
-def geo_ip(ip: str | None) -> dict:
-    """Cidade/estado/país de um IP via ip-api.com (grátis, sem chave).
-    Best-effort: cacheado por IP, timeout curto, falha silenciosa. NUNCA quebra
-    o acesso ao documento — geo é só enriquecimento."""
-    vazio = {"cidade": None, "estado": None, "pais": None}
-    if not ip or ip in ("127.0.0.1", "::1", "?", "localhost"):
-        return vazio
-    if ip in _geo_cache:
-        return _geo_cache[ip]
-    try:
-        r = httpx.get(
-            f"http://ip-api.com/json/{ip}",
-            params={"fields": "status,country,regionName,city", "lang": "pt-BR"},
-            timeout=4,
-        )
-        j = r.json() if r.status_code == 200 else {}
-        res = ({"cidade": j.get("city"), "estado": j.get("regionName"),
-                "pais": j.get("country")}
-               if j.get("status") == "success" else vazio)
-    except Exception:  # noqa: BLE001 — best-effort
-        res = vazio
-    _geo_cache[ip] = res
-    return res
 
 
 def ip_do_request(request) -> str:

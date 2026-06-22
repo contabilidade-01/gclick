@@ -207,6 +207,39 @@
   </p>
 </div>
 
+<!-- ============== Limpeza automática de PDFs antigos ============== -->
+<div class="card" style="max-width:780px;margin-top:20px">
+  <h2>🧹 Limpeza de arquivos</h2>
+  <p style="font-size:13px;color:#666;margin-bottom:14px">
+    Os PDFs enviados ficam guardados na VPS (para o link rastreado nunca expirar).
+    A limpeza apaga automaticamente os arquivos com <strong>mais de {{ limpeza.retencao_meses }} meses</strong>.
+    O <strong>registro na Auditoria permanece</strong> — só o arquivo físico é removido.
+  </p>
+  <form method="post" action="/configuracoes/limpeza">
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <input type="checkbox" name="limpeza_ativa" value="1" {% if limpeza.ativa %}checked{% endif %}>
+      <strong>Ativar limpeza automática</strong>
+    </label>
+    <div style="margin-bottom:14px">
+      <label style="font-size:13px;color:#444">Verificar a cada (horas):</label>
+      <input type="number" name="limpeza_intervalo_h" min="1" value="{{ limpeza.intervalo_h }}"
+             style="width:80px;padding:7px;border:1px solid #d1d5da;border-radius:4px">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Salvar</button>
+  </form>
+
+  <form method="post" action="/configuracoes/limpeza/rodar" style="margin-top:12px"
+        onsubmit="return confirm('Apagar agora todos os PDFs com mais de {{ limpeza.retencao_meses }} meses?');">
+    <button type="submit" class="btn btn-secondary btn-sm">🧹 Rodar limpeza agora</button>
+  </form>
+
+  {% if limpeza_ultima_exec %}
+  <div style="font-size:12px;color:#666;margin-top:12px;border-top:1px solid #eee;padding-top:10px">
+    Última limpeza: {{ limpeza_ultima_exec[:16].replace('T',' ') }} — {{ limpeza_ultimo_resultado or '—' }}
+  </div>
+  {% endif %}
+</div>
+
 <!-- ============== Ritmo de envio (anti-bloqueio do número) ============== -->
 <div class="card" style="max-width:780px">
   <h2>🐌 Ritmo de envio (anti-bloqueio)</h2>

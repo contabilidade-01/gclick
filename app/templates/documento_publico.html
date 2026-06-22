@@ -11,44 +11,76 @@
            background: #eef2f7; color: #1f2937; min-height: 100vh;
            display: flex; align-items: center; justify-content: center; padding: 20px; }
     .card { background: #fff; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-            width: 100%; max-width: 440px; overflow: hidden; }
+            width: 100%; max-width: 460px; overflow: hidden; }
     .top { background: #1e3a5f; color: #fff; padding: 22px 24px; text-align: center; }
-    .top .marca { font-size: 13px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.85; }
-    .top .doc { font-size: 20px; font-weight: 600; margin-top: 8px; }
-    .body { padding: 24px; }
+    .top .marca { font-size: 13px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.9; }
+    .top .oficial { font-size: 11px; opacity: 0.7; margin-top: 4px; }
+    .top .doc { font-size: 20px; font-weight: 600; margin-top: 12px; }
+    .saudacao { padding: 18px 24px 4px; font-size: 14px; color: #374151; }
+    .saudacao strong { color: #1e3a5f; }
+    .body { padding: 12px 24px 24px; }
     .linha { display: flex; justify-content: space-between; padding: 10px 0;
              border-bottom: 1px solid #f0f2f5; font-size: 15px; }
     .linha:last-of-type { border-bottom: 0; }
     .linha .rot { color: #6b7280; }
     .linha .val { font-weight: 600; }
-    .btn { display: block; width: 100%; margin-top: 22px; padding: 16px;
-           background: #22c55e; color: #fff; border: 0; border-radius: 10px;
-           font-size: 17px; font-weight: 600; text-align: center; text-decoration: none;
-           cursor: pointer; }
-    .btn:active { background: #16a34a; }
+    .btn { display: block; width: 100%; margin-top: 12px; padding: 16px;
+           border: 0; border-radius: 10px; font-size: 17px; font-weight: 600;
+           text-align: center; text-decoration: none; cursor: pointer; }
+    .btn-ver { background: #1e3a5f; color: #fff; }
+    .btn-ver:active { background: #16294a; }
+    .btn-baixar { background: #22c55e; color: #fff; }
+    .btn-baixar:active { background: #16a34a; }
+    .seguro { display: flex; align-items: center; gap: 8px; margin-top: 16px;
+              padding: 12px 14px; background: #f0fdf4; border: 1px solid #bbf7d0;
+              border-radius: 10px; font-size: 13px; color: #166534; }
+    .seguro .ico { font-size: 18px; }
+    .aviso { margin-top: 12px; font-size: 12px; color: #6b7280; line-height: 1.5; }
     .rodape { padding: 16px 24px; text-align: center; color: #9ca3af; font-size: 12px;
-              background: #fafbfc; border-top: 1px solid #f0f2f5; }
+              background: #fafbfc; border-top: 1px solid #f0f2f5; line-height: 1.6; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="top">
-      <div class="marca">📄 NESCON Contabilidade</div>
+      <div class="marca">🛡️ NESCON Contabilidade</div>
+      <div class="oficial">Documento oficial</div>
       <div class="doc">{{ titulo }}</div>
     </div>
+
+    <div class="saudacao">
+      Olá! Este documento foi enviado para você pela <strong>NESCON Contabilidade</strong>.
+    </div>
+
     <div class="body">
       <div class="linha"><span class="rot">Competência</span><span class="val">{{ competencia }}</span></div>
       {% if vencimento %}
       <div class="linha"><span class="rot">Vencimento</span><span class="val">🗓 {{ vencimento }}</span></div>
       {% endif %}
 
-      <a class="btn" href="/g/{{ token }}/ver" target="_blank" rel="noopener">
-        📄 Visualizar / Baixar documento
+      <a class="btn btn-ver" href="/g/{{ token }}/ver" target="_blank" rel="noopener">
+        👁 Visualizar documento
       </a>
+      <a class="btn btn-baixar" href="/g/{{ token }}/baixar">
+        ⬇ Baixar documento
+      </a>
+
+      <div class="seguro">
+        <span class="ico">🔒</span>
+        <span><strong>Link seguro e exclusivo</strong>, gerado somente para você.
+        Conexão protegida (HTTPS).</span>
+      </div>
+
+      <p class="aviso">
+        🔐 Por segurança, a NESCON <strong>nunca</strong> pede senhas, códigos ou
+        pagamentos por este link. Em caso de dúvida, fale diretamente com o seu
+        contato no escritório.
+      </p>
     </div>
+
     <div class="rodape">
-      Documento disponibilizado por <strong>NESCON Contabilidade</strong>.<br>
-      Em caso de dúvidas, fale com o seu contato no escritório.
+      Documento confidencial, destinado exclusivamente ao cliente identificado.<br>
+      <strong>NESCON Contabilidade</strong> — a seu serviço.
     </div>
   </div>
 </body>

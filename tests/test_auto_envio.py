@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from app import config, db, helpers
 
 
@@ -120,3 +122,46 @@ def test_piloto_runtime():
     # Sem número, 'ativo' vira False (proteção contra ligar apontando p/ nada).
     db.set_config("auto_piloto_numero", "")
     assert config.get_piloto_runtime()["ativo"] is False
+
+
+# ---------- limpeza de PDFs antigos ----------
+
+def _envio_com_pdf(monkeypatch, tmp_path, enviado_em):
+    """Cria um envio + arquivo PDF físico, com data de envio forçada."""
+    monkeypatch.setattr(config, "PASTA_GUIAS", tmp_path / "guias")
+    config.PASTA_GUIAS.mkdir(parents=True, exist_ok=True)
+    eid = db.registrar_envio(cnpj="123", whatsapp="5511963234599", tarefa_id="T",
+                             atividade_id="A", arquivo_nome="g.pdf",
+                             competencia="2026-06", uazapi_message_id="m", status="ok")
+    arq = config.PASTA_GUIAS / f"{eid:06d}_g.pdf"
+    arq.write_bytes(b"%PDF-fake")
+    db.set_envio_pdf_local(eid, f"guias/{eid:06d}_g.pdf")
+    with db.conn() as c:
+        c.execute("UPDATE envios SET enviado_em=? WHERE id=?", (enviado_em, eid))
+    return eid, arq
+
+
+def test_limpeza_apaga_antigos_preserva_novos(monkeypatch, tmp_path):
+    # 1 antigo (8 meses) e 1 recente (hoje).
+    antigo_dt = (datetime.now() - timedelta(days=8 * 30)).isoformat()
+    eid_velho, arq_velho = _envio_com_pdf(monkeypatch, tmp_path, antigo_dt)
+    eid_novo, arq_novo = _envio_com_pdf(monkeypatch, tmp_path, datetime.now().isoformat())
+
+    assert helpers.limpar_pdfs_antigos() == 1
+    assert not arq_velho.exists()                      # antigo apagado
+    assert arq_novo.exists()                           # recente preservado
+    # Vínculo limpo no banco do antigo; registro permanece.
+    assert db.get_envio(eid_velho)["pdf_local_path"] is None
+    assert db.get_envio(eid_velho) is not None
+
+
+def test_excluir_pdf_manual(monkeypatch, tmp_path):
+    eid, arq = _envio_com_pdf(monkeypatch, tmp_path, datetime.now().isoformat())
+    assert helpers.excluir_pdf_envio(eid) is True
+    assert not arq.exists()
+    assert db.get_envio(eid)["pdf_local_path"] is None
+
+
+def test_limpeza_runtime_defaults():
+    cfg = config.get_limpeza_runtime()
+    assert cfg["ativa"] is True and cfg["intervalo_h"] == 24 and cfg["retencao_meses"] == 6

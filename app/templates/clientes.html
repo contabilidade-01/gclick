@@ -23,7 +23,7 @@
     </div>
   </div>
   <div class="print-info" style="display:none;font-size:12px;color:#666;margin-bottom:10px">
-    <strong>Filtro:</strong> {% if filtro == 'sem_whatsapp' %}Sem WhatsApp{% elif filtro == 'fora_padrao' %}Fora do padrão{% elif filtro == 'desativados' %}Desativados{% else %}Todos{% endif %}
+    <strong>Filtro:</strong> {% if filtro == 'enviaveis' %}Ativos c/ WhatsApp{% elif filtro == 'sem_whatsapp' %}Sem WhatsApp{% elif filtro == 'fora_padrao' %}Fora do padrão{% elif filtro == 'desativados' %}Desativados{% elif filtro == 'auto' %}Auto{% else %}Todos{% endif %}
     | <strong>Total:</strong> {{ clientes|length }}
   </div>
   <form method="get" action="/clientes" class="filtros no-print" style="margin-bottom:8px">
@@ -39,6 +39,7 @@
     <div class="filtros">
       <strong style="font-size:13px">Mostrar:</strong>
       <a href="/clientes" class="btn btn-sm {% if not filtro %}btn-primary{% else %}btn-secondary{% endif %}">Todos ({{ total_geral }})</a>
+      <a href="/clientes?filtro=enviaveis" class="btn btn-sm {% if filtro=='enviaveis' %}btn-primary{% else %}btn-secondary{% endif %}">✅ Ativos c/ WhatsApp ({{ total_enviaveis }})</a>
       <a href="/clientes?filtro=sem_whatsapp" class="btn btn-sm {% if filtro=='sem_whatsapp' %}btn-primary{% else %}btn-secondary{% endif %}">⚠ Sem WhatsApp ({{ total_sem_whatsapp }})</a>
       <a href="/clientes?filtro=fora_padrao" class="btn btn-sm {% if filtro=='fora_padrao' %}btn-primary{% else %}btn-secondary{% endif %}">🔢 Fora do padrão ({{ total_fora_padrao }})</a>
       <a href="/clientes?filtro=desativados" class="btn btn-sm {% if filtro=='desativados' %}btn-primary{% else %}btn-secondary{% endif %}">Desativados ({{ total_desativados }})</a>

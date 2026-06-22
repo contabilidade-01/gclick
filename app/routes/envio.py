@@ -354,18 +354,17 @@ async def baixar_pdf_local(envio_id: int, request: Request):
 
 def _registrar_acesso_async(envio_id: int, token: str, evento: str, request: Request) -> None:
     """Registra o acesso em background — não atrasa a resposta ao cliente.
-    Extrai IP/UA na hora (thread-safe); geo-IP + insert vão na thread."""
+    Guarda só HORÁRIO + IP (o IP é o dado bruto e confiável; geolocalização foi
+    removida por errar o estado em rede móvel)."""
     ip = helpers.ip_do_request(request)
     ua = request.headers.get("user-agent", "")
     eh_bot = 1 if helpers.eh_user_agent_bot(ua) else 0
 
     def _job() -> None:
         try:
-            geo = {} if eh_bot else helpers.geo_ip(ip)
             db.registrar_acesso(
                 envio_id=envio_id, token=token, evento=evento, ip=ip,
-                cidade=geo.get("cidade"), estado=geo.get("estado"),
-                pais=geo.get("pais"), user_agent=ua, eh_bot=eh_bot,
+                user_agent=ua, eh_bot=eh_bot,
             )
         except Exception:  # noqa: BLE001
             logger.exception("falha ao registrar acesso ao documento (envio %s)", envio_id)
@@ -396,23 +395,46 @@ def documento_pagina(token: str, request: Request):
     })
 
 
-@router.get("/g/{token}/ver")
-def documento_pdf(token: str, request: Request):
-    """Serve o PDF (cópia local, permanente) e registra o download."""
+def _resolver_pdf(token: str):
+    """Valida o token e localiza o PDF. Retorna (envio, caminho, None) no sucesso
+    ou (None, None, Response_de_erro) na falha."""
     envio = db.get_envio_por_token(token)
     if not envio:
-        return Response("Documento não encontrado.", status_code=404)
+        return None, None, Response("Documento não encontrado.", status_code=404)
     pdf_path = envio["pdf_local_path"] if "pdf_local_path" in envio.keys() else None
     if not pdf_path:
-        return Response("Documento sem cópia disponível.", status_code=404)
+        return None, None, Response("Documento sem cópia disponível.", status_code=404)
     caminho = config.PASTA_GUIAS.parent / pdf_path
     if not caminho.exists():
-        return Response("Arquivo não encontrado.", status_code=410)
+        return None, None, Response("Arquivo não encontrado.", status_code=410)
+    return envio, caminho, None
+
+
+@router.get("/g/{token}/ver")
+def documento_pdf(token: str, request: Request):
+    """VISUALIZAR: abre o PDF no navegador (inline) e registra o acesso."""
+    envio, caminho, erro = _resolver_pdf(token)
+    if erro:
+        return erro
     _registrar_acesso_async(envio["id"], token, "download", request)
     nome_dl = envio["arquivo_nome"] or "documento.pdf"
     return FileResponse(
         caminho, media_type="application/pdf", filename=nome_dl,
         headers={"Content-Disposition": f'inline; filename="{nome_dl}"'},
+    )
+
+
+@router.get("/g/{token}/baixar")
+def documento_baixar(token: str, request: Request):
+    """BAIXAR: força o download direto do PDF (attachment) e registra o acesso."""
+    envio, caminho, erro = _resolver_pdf(token)
+    if erro:
+        return erro
+    _registrar_acesso_async(envio["id"], token, "download", request)
+    nome_dl = envio["arquivo_nome"] or "documento.pdf"
+    return FileResponse(
+        caminho, media_type="application/pdf", filename=nome_dl,
+        headers={"Content-Disposition": f'attachment; filename="{nome_dl}"'},
     )
 
 

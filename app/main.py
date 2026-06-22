@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
     helpers.prewarm()  # aquece o cache do mês atual em background (não bloqueia)
     helpers.iniciar_atualizador_periodico()  # VPS: mantém o mês atual quente
     helpers.iniciar_worker_auto_envio()  # Fase 2: envio automático por gatilho (opt-in)
+    helpers.iniciar_worker_limpeza()  # apaga PDFs locais com +6 meses (configurável)
     yield
 
 

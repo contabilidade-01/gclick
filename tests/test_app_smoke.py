@@ -41,8 +41,22 @@ def test_favicon():
         assert c.get("/favicon.ico").status_code == 204
 
 
-@pytest.mark.parametrize("rota", ["/auditoria", "/tipos", "/clientes", "/configuracoes"])
+@pytest.mark.parametrize("rota", ["/auditoria", "/tipos", "/clientes", "/configuracoes", "/aprovacoes"])
 def test_telas_leves_autenticadas_renderizam(logado, rota):
     # Telas que não dependem do G-Click devem responder 200 já autenticado.
     r = logado.get(rota, follow_redirects=False)
     assert r.status_code == 200, f"{rota} devolveu {r.status_code}"
+
+
+def test_cliente_editar_renderiza(logado):
+    # Regressão: a tela de edição dava 500 (sqlite3.Row não tem .get() no template).
+    from app import db
+    db.upsert_cliente("12345678000199", "ACME", whatsapp="5511963234599")
+    r = logado.get("/clientes/12345678000199/editar", follow_redirects=False)
+    assert r.status_code == 200
+
+
+def test_filtro_enviaveis(logado):
+    # Filtro "ativos com WhatsApp" responde 200.
+    r = logado.get("/clientes?filtro=enviaveis", follow_redirects=False)
+    assert r.status_code == 200
