@@ -323,24 +323,3 @@ async def configuracoes_limpeza_rodar(request: Request):
     db.set_config("limpeza_ultimo_resultado", f"{n} arquivo(s) removido(s)")
     return RedirectResponse(
         url=f"/configuracoes?sucesso={n}+arquivo(s)+antigo(s)+removido(s)", status_code=303)
-
-
-@router.post("/configuracoes/modo-envio")
-async def configuracoes_modo_envio(request: Request,
-                                  modo_envio: str = Form("anexo")):
-    """Salva o modo de envio: 'anexo' (PDF) ou 'link' (texto com hyperlink)."""
-    if redir := auth.requer_login(request):
-        return redir
-    usuario = auth.usuario_da_requisicao(request) or "?"
-    modo = modo_envio.strip().lower()
-    if modo not in ("anexo", "link"):
-        return RedirectResponse(
-            url="/configuracoes?erro=Modo+invalido",
-            status_code=303,
-        )
-    db.set_config("modo_envio", modo, usuario)
-    label = "📎 Anexo (PDF)" if modo == "anexo" else "🔗 Link (hyperlink)"
-    return RedirectResponse(
-        url=f"/configuracoes?sucesso=Modo+de+envio+alterado+para+{label}",
-        status_code=303,
-    )

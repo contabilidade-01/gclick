@@ -169,7 +169,8 @@ def get_throttle_runtime() -> dict:
       envio_throttle_s      — pausa entre envios reais (segundos, float)
       envio_max_por_hora    — teto de envios por hora (int)
       envio_delay_uazapi_ms — "digitando..." antes do envio (ms, int)
-      modo_envio            — 'anexo' (PDF) ou 'link' (texto com hyperlink)
+
+    O `modo_envio` é FIXO em 'link' (link rastreado) — não é mais configurável.
     """
     from . import db
     try:
@@ -184,10 +185,9 @@ def get_throttle_runtime() -> dict:
         delay_ms = int(db.get_config("envio_delay_uazapi_ms", "0"))
     except (TypeError, ValueError):
         delay_ms = 0
-    modo = db.get_config("modo_envio", "anexo") or "anexo"
     return {
         "throttle_s": max(0.0, throttle_s),
         "max_por_hora": max(1, max_por_hora),
         "delay_uazapi_ms": max(0, delay_ms),
-        "modo_envio": modo if modo in ("anexo", "link") else "anexo",
+        "modo_envio": "link",  # fixo — sempre link rastreado
     }

@@ -112,35 +112,21 @@
   </div>
 </div>
 
-<!-- ============== Modo de envio (anexo ou link) ============== -->
+<!-- ============== Método de envio (FIXO: link rastreado) ============== -->
 <div class="card" style="max-width:780px;margin-top:20px">
-  <h2>📤 Modo de envio</h2>
-
-  <form method="post" action="/configuracoes/modo-envio">
-    <div style="display:flex;gap:16px;align-items:flex-start">
-      <label style="display:flex;align-items:center;gap:8px;padding:12px;border:1px solid #d1d5da;border-radius:8px;cursor:pointer;min-width:200px{% if throttle.modo_envio == 'anexo' %};border-color:#22c55e;background:#f0fdf4{% endif %}">
-        <input type="radio" name="modo_envio" value="anexo"
-               {% if throttle.modo_envio == 'anexo' %}checked{% endif %}
-               onchange="this.form.submit()">
-        <div>
-          <strong>📎 Anexo (PDF)</strong>
-          <div style="font-size:12px;color:#666">Envia o arquivo PDF diretamente</div>
-        </div>
-      </label>
-      <label style="display:flex;align-items:center;gap:8px;padding:12px;border:1px solid #d1d5da;border-radius:8px;cursor:pointer;min-width:200px{% if throttle.modo_envio == 'link' %};border-color:#3b82f6;background:#eff6ff{% endif %}">
-        <input type="radio" name="modo_envio" value="link"
-               {% if throttle.modo_envio == 'link' %}checked{% endif %}
-               onchange="this.form.submit()">
-        <div>
-          <strong>🔗 Link (hyperlink)</strong>
-          <div style="font-size:12px;color:#666">Envia texto com link clicável para o PDF</div>
-        </div>
-      </label>
+  <h2>📤 Método de envio</h2>
+  <div style="display:flex;align-items:center;gap:10px;padding:14px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px">
+    <span style="font-size:22px">🔗</span>
+    <div>
+      <strong>Link rastreado</strong> <span style="font-size:12px;color:#3b82f6">(fixo)</span>
+      <div style="font-size:13px;color:#555;margin-top:2px">
+        O cliente recebe um botão que abre a página segura do documento
+        (visualizar / baixar). Você acompanha as aberturas na Auditoria.
+      </div>
     </div>
-  </form>
-
+  </div>
   <p style="font-size:12px;color:#92400e;margin-top:12px">
-    ⚠ Modo Link usa botão de URL — visível apenas no app do celular, não no WhatsApp Web.
+    ⚠ O botão de link aparece no app do celular (não no WhatsApp Web).
   </p>
 </div>
 
