@@ -297,22 +297,48 @@ def registrar_envio(*, cnpj: str, whatsapp: str | None, tarefa_id: str,
         return cur.lastrowid
 
 
+# Status que contam como "resolvida" (sai da fila de pendentes): enviado de
+# verdade ('ok') ou baixa manual ('baixa_manual' = enviada fora do sistema).
+_STATUS_RESOLVIDO = ("ok", "baixa_manual")
+
+
 def ja_enviado(cnpj: str, tarefa_id: str, atividade_id: str) -> bool:
     with conn() as c:
         row = c.execute(
-            "SELECT 1 FROM envios WHERE cnpj=? AND tarefa_id=? AND atividade_id=? AND status='ok' LIMIT 1",
+            "SELECT 1 FROM envios WHERE cnpj=? AND tarefa_id=? AND atividade_id=? "
+            "AND status IN ('ok','baixa_manual') LIMIT 1",
             (cnpj, tarefa_id, atividade_id),
         ).fetchone()
         return row is not None
 
 
 def chaves_enviadas() -> set[tuple[str, str, str]]:
-    """Retorna {(cnpj, tarefa_id, atividade_id)} de tudo que já foi enviado com sucesso."""
+    """{(cnpj, tarefa_id, atividade_id)} de tudo resolvido — enviado OU baixa manual."""
     with conn() as c:
         rows = c.execute(
-            "SELECT cnpj, tarefa_id, atividade_id FROM envios WHERE status='ok'"
+            "SELECT cnpj, tarefa_id, atividade_id FROM envios "
+            "WHERE status IN ('ok','baixa_manual')"
         )
         return {(r["cnpj"], r["tarefa_id"], r["atividade_id"]) for r in rows}
+
+
+def dar_baixa_manual(*, cnpj: str, tarefa_id: str, atividade_id: str,
+                     arquivo_nome: str | None, competencia: str | None) -> bool:
+    """Marca uma guia como 'já enviada fora do sistema' (baixa manual), SEM enviar.
+    Sai da fila de pendentes. Idempotente: pula se já resolvida. Retorna True se deu baixa."""
+    if ja_enviado(cnpj, tarefa_id, atividade_id):
+        return False
+    with conn() as c:
+        c.execute(
+            """INSERT INTO envios
+               (enviado_em, cnpj, whatsapp, tarefa_id, atividade_id, arquivo_nome,
+                competencia, uazapi_message_id, status, erro, origem)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (agora_iso(), cnpj, None, tarefa_id, atividade_id, arquivo_nome,
+             competencia, None, "baixa_manual",
+             "Baixa manual (enviada fora do sistema)", "manual"),
+        )
+    return True
 
 
 def set_envio_pdf_local(envio_id: int, caminho: str) -> None:

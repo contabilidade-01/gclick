@@ -117,6 +117,9 @@
             {% if g.pode_enviar %}
               <button type="submit" name="chave_unica" value="{{ g.chave }}" class="btn btn-primary btn-sm">Enviar</button>
             {% endif %}
+            {% if not g.ja_enviado %}
+              <button type="button" onclick="darBaixaUma('{{ g.cnpj }}','{{ g.chave }}')" class="btn btn-secondary btn-sm" title="Marcar como JÁ enviada (fora do sistema), sem enviar pelo WhatsApp">✔ Baixa</button>
+            {% endif %}
             {% if g.oculto %}
               <button type="button" onclick="desocultar('{{ g.cnpj }}','{{ g.tarefa_id }}','{{ g.atividade_id }}')" class="btn btn-secondary btn-sm" title="Voltar a mostrar">👁</button>
             {% else %}
@@ -125,7 +128,14 @@
           </td>
         </tr>
       {% else %}
+        {% if status_filtro == 'pendentes' and total > 0 %}
+        <tr><td colspan="8" style="text-align:center;color:#166534;padding:30px;font-size:15px">
+          ✅ <strong>Tudo enviado neste mês!</strong> ({{ enviadas }} guia(s))<br>
+          <span style="font-size:13px;color:#666">As enviadas estão no filtro <strong>Enviadas</strong> acima ou em <a href="/check">Check de enviados</a>.</span>
+        </td></tr>
+        {% else %}
         <tr><td colspan="8" style="text-align:center;color:#888;padding:30px">Nenhuma guia para esta competência.</td></tr>
+        {% endif %}
       {% endfor %}
       </tbody>
     </table>
@@ -136,6 +146,7 @@
       </div>
       <div>
         <button class="btn btn-secondary" type="button" onclick="ocultarSelecionadas()" title="Esconde do nosso sistema (não toca no G-Click)">🚫 Ocultar selecionadas</button>
+        <button class="btn btn-secondary" type="button" onclick="darBaixaSelecionadas()" title="Marcar selecionadas como JÁ enviadas (fora do sistema), sem enviar">✔ Dar baixa nas selecionadas</button>
         <button class="btn btn-secondary" type="submit" name="acao" value="lote">Enviar selecionadas</button>
         <button class="btn btn-primary" type="submit" name="acao" value="todas" onclick="return confirm('Enviar TODAS as {{ prontas }} guias prontas?');">Enviar todas prontas</button>
       </div>
@@ -159,6 +170,16 @@
 <form id="form-ocultar-lote" method="post" action="/ocultar/lote" style="display:none">
   <input type="hidden" name="competencia" value="{{ competencia }}">
   <input type="hidden" name="motivo" value="Oculto em lote pela fila">
+  <!-- inputs com name="pares" são injetados pelo JS no clique -->
+</form>
+<form id="form-baixa-uma" method="post" action="/baixa-manual" style="display:none">
+  <input type="hidden" name="cnpj">
+  <input type="hidden" name="chave">
+  <input type="hidden" name="arquivo_nome" value="">
+  <input type="hidden" name="competencia" value="{{ competencia }}">
+</form>
+<form id="form-baixa-lote" method="post" action="/baixa-manual/lote" style="display:none">
+  <input type="hidden" name="competencia" value="{{ competencia }}">
   <!-- inputs com name="pares" são injetados pelo JS no clique -->
 </form>
 
@@ -186,6 +207,37 @@ function ocultarSelecionadas() {
   f.querySelectorAll('input[name="pares"]').forEach(n => n.remove());
   marcados.forEach(chk => {
     // Acha o hidden irmão com o mesmo data-chave para descobrir o cnpj
+    const meta = chk.parentElement.querySelector('input[data-chave="' + chk.value + '"]');
+    const cnpj = meta ? meta.getAttribute('data-cnpj') : '';
+    if (!cnpj) return;
+    const inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'pares';
+    inp.value = cnpj + '|' + chk.value;
+    f.appendChild(inp);
+  });
+  if (!f.querySelectorAll('input[name="pares"]').length) {
+    alert('Não consegui identificar o CNPJ das guias marcadas. Recarregue a página e tente de novo.');
+    return;
+  }
+  f.submit();
+}
+function darBaixaUma(cnpj, chave) {
+  if (!confirm('Marcar como JÁ ENVIADA (baixa manual), sem enviar pelo WhatsApp?\nUse para guias que já foram enviadas fora do sistema.')) return;
+  const f = document.getElementById('form-baixa-uma');
+  f.cnpj.value = cnpj; f.chave.value = chave;
+  f.submit();
+}
+function darBaixaSelecionadas() {
+  const marcados = Array.from(document.querySelectorAll('.row-chk:checked'));
+  if (!marcados.length) {
+    alert('Marque pelo menos uma guia (ou use o seletor do topo para marcar todas).');
+    return;
+  }
+  if (!confirm('Marcar ' + marcados.length + ' guia(s) como JÁ ENVIADAS (baixa manual)?\nElas NÃO serão enviadas pelo WhatsApp — só saem da lista de pendentes.')) return;
+  const f = document.getElementById('form-baixa-lote');
+  f.querySelectorAll('input[name="pares"]').forEach(n => n.remove());
+  marcados.forEach(chk => {
     const meta = chk.parentElement.querySelector('input[data-chave="' + chk.value + '"]');
     const cnpj = meta ? meta.getAttribute('data-cnpj') : '';
     if (!cnpj) return;

@@ -51,6 +51,7 @@
         <td>{{ e.competencia or '—' }}</td>
         <td>
           {% if e.status == 'ok' %}<span class="badge badge-ok">ok</span>
+          {% elif e.status == 'baixa_manual' %}<span class="badge" style="background:#e0e7ff;color:#3730a3" title="Marcada manualmente como já enviada (fora do sistema) — não houve envio pelo WhatsApp">📥 baixa manual</span>
           {% elif e.status == 'token_invalido' %}<span class="badge" style="background:#fde8e8;color:#9b1c1c;font-weight:600" title="A uazapi rejeitou o token. Pegue um novo no painel.">🔑 TOKEN INVÁLIDO</span>
           {% elif e.status == 'bloqueado' %}<span class="badge" style="background:#feecdc;color:#771d1d;font-weight:600" title="Camada de segurança bloqueou o envio">🛡 BLOQUEADO</span>
           {% elif e.status == 'falha' %}<span class="badge badge-falta">falha</span>

@@ -48,6 +48,18 @@ def test_acessos_ignora_bots():
     assert db.acessos_por_envio([envio_id]) == {}  # nenhum acesso humano
 
 
+def test_baixa_manual_sai_de_pendentes():
+    # Baixa manual marca como resolvida sem enviar — sai de chaves_enviadas/ja_enviado.
+    assert db.ja_enviado("123", "T1", "A1") is False
+    assert db.dar_baixa_manual(cnpj="123", tarefa_id="T1", atividade_id="A1",
+                               arquivo_nome="g.pdf", competencia="2026-06") is True
+    assert db.ja_enviado("123", "T1", "A1") is True
+    assert ("123", "T1", "A1") in db.chaves_enviadas()
+    # Idempotente: não dá baixa de novo.
+    assert db.dar_baixa_manual(cnpj="123", tarefa_id="T1", atividade_id="A1",
+                               arquivo_nome=None, competencia="2026-06") is False
+
+
 def test_acessos_por_envio_em_lote():
     e1, e2 = _novo_envio(), _novo_envio()
     for eid in (e1, e2):

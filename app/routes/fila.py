@@ -28,7 +28,8 @@ def fila(request: Request, competencia: str | None = None,
     competencia = competencia or f"{hoje.year:04d}-{hoje.month:02d}"
     obrigacao = (obrigacao or "").strip() or None
     cliente_q = (cliente or "").strip().lower()
-    status_filtro = (status or "").strip().lower() or "todas"
+    # Padrão = só Pendentes (Fila = lista de tarefas; o que já saiu deixa a lista).
+    status_filtro = (status or "").strip().lower() or "pendentes"
 
     erro_carga: str | None = None
     guias_view: list[dict] = []
@@ -36,6 +37,11 @@ def fila(request: Request, competencia: str | None = None,
     whatsapp_map = db.map_whatsapp_por_cnpj()
     ocultas_ativ, ocultas_tarefa = db.chaves_ocultas()
     qtd_ocultas_na_carga = 0
+    # Contadores do mês — calculados ANTES do filtro de status, para o resumo
+    # ("X pendentes · Y enviadas · Z total") ficar correto seja qual for o filtro.
+    total_mes = 0
+    enviadas_mes = 0
+    prontas_mes = 0
 
     try:
         dados = helpers.carregar_tarefas_e_ativs(competencia, obrigacao, forcar=bool(refresh))
@@ -57,14 +63,20 @@ def fila(request: Request, competencia: str | None = None,
                     if cliente_q not in alvo:
                         continue
                 ja = (cnpj, g["tarefa_id"], g["atividade_id"]) in enviadas_keys
-                # Filtro por status
+                wpp = whatsapp_map.get(cnpj)
+                tem_pdf = bool(g["arquivo_url"])
+                pode = tem_pdf and bool(wpp) and not ja
+                # Contadores do mês (independentes do filtro de status exibido)
+                total_mes += 1
+                if ja:
+                    enviadas_mes += 1
+                if pode:
+                    prontas_mes += 1
+                # Filtro por status só decide o que APARECE na lista
                 if status_filtro == "enviadas" and not ja:
                     continue
                 if status_filtro == "pendentes" and ja:
                     continue
-                wpp = whatsapp_map.get(cnpj)
-                tem_pdf = bool(g["arquivo_url"])
-                pode = tem_pdf and bool(wpp) and not ja
                 guias_view.append({
                     **g,
                     "data_vencimento_fmt": helpers.fmt_data(g["data_vencimento"]),
@@ -80,9 +92,9 @@ def fila(request: Request, competencia: str | None = None,
     except Exception as e:
         erro_carga = str(e)
 
-    prontas = sum(1 for g in guias_view if g["pode_enviar"])
-    enviadas = sum(1 for g in guias_view if g["ja_enviado"])
-    pendentes = prontas  # prontas + pendentes de envio
+    prontas = prontas_mes
+    enviadas = enviadas_mes
+    pendentes = total_mes - enviadas_mes
 
     return templates.TemplateResponse(request, "fila.html", {
         "request": request,
@@ -96,7 +108,8 @@ def fila(request: Request, competencia: str | None = None,
         "mostrar_ocultas": mostrar_ocultas,
         "qtd_ocultas_na_carga": qtd_ocultas_na_carga,
         "guias": guias_view,
-        "total": len(guias_view),
+        "total": total_mes,
+        "total_exibidas": len(guias_view),
         "prontas": prontas,
         "enviadas": enviadas,
         "pendentes": pendentes,
@@ -153,6 +166,51 @@ async def ocultar_cliente_post(request: Request,
     ids = [t.strip() for t in tarefa_ids.split(",") if t.strip()]
     db.ocultar_cliente_competencia(cnpj=cnpj, tarefa_ids=ids, motivo=motivo)
     return RedirectResponse(url=f"/fila?competencia={competencia}", status_code=303)
+
+
+@router.post("/baixa-manual")
+async def baixa_manual_post(request: Request,
+                           cnpj: str = Form(...),
+                           chave: str = Form(...),
+                           competencia: str = Form(...),
+                           arquivo_nome: str = Form("")):
+    """Baixa manual de UMA guia: marca como já enviada (fora do sistema), sem enviar."""
+    if redir := auth.requer_login(request):
+        return redir
+    try:
+        tarefa_id, atividade_id = chave.split("|", 1)
+    except ValueError:
+        return RedirectResponse(url=f"/fila?competencia={competencia}", status_code=303)
+    db.dar_baixa_manual(cnpj=cnpj, tarefa_id=tarefa_id, atividade_id=atividade_id,
+                        arquivo_nome=arquivo_nome or None, competencia=competencia)
+    return RedirectResponse(
+        url=f"/fila?competencia={competencia}&sucesso=Baixa+manual+registrada", status_code=303)
+
+
+@router.post("/baixa-manual/lote")
+async def baixa_manual_lote_post(request: Request,
+                                 pares: list[str] = Form(default=[]),
+                                 competencia: str = Form(...)):
+    """Baixa manual em lote. `pares`: 'cnpj|tarefa_id|atividade_id' (mesmo formato
+    do ocultar/lote). Marca como já enviadas sem enviar — para o legado que saiu
+    fora do sistema. Pula as que já estão resolvidas (idempotente)."""
+    if redir := auth.requer_login(request):
+        return redir
+    n = 0
+    for p in pares:
+        try:
+            cnpj, tarefa_id, atividade_id = p.split("|", 2)
+        except ValueError:
+            continue
+        cnpj, tarefa_id, atividade_id = cnpj.strip(), tarefa_id.strip(), atividade_id.strip()
+        if not cnpj or not tarefa_id:
+            continue
+        if db.dar_baixa_manual(cnpj=cnpj, tarefa_id=tarefa_id, atividade_id=atividade_id,
+                               arquivo_nome=None, competencia=competencia):
+            n += 1
+    return RedirectResponse(
+        url=f"/fila?competencia={competencia}&sucesso={n}+guia(s)+com+baixa+manual",
+        status_code=303)
 
 
 @router.post("/ocultar/lote")
