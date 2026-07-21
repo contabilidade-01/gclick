@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote_plus
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import auth, db, gclick
+from .. import auth, config, db, gclick, portal
 from ..templating import templates
 
 router = APIRouter()
@@ -14,12 +16,12 @@ router = APIRouter()
 @router.get("/clientes", response_class=HTMLResponse)
 def clientes_get(request: Request, sync: str | None = None,
                  sobrescrever: int = 0, focus: str | None = None,
-                 filtro: str | None = None):
+                 filtro: str | None = None, sucesso: str | None = None):
     # `def`: quando sync=1, consulta o G-Click (bloqueante) — roda no threadpool.
     if redir := auth.requer_login(request):
         return redir
     usuario = auth.usuario_da_requisicao(request)
-    sucesso = None
+    # `sucesso` pode chegar por querystring (redirect de outra ação, ex.: sync do portal).
 
     if sync == "1":
         try:
@@ -123,6 +125,36 @@ def clientes_get(request: Request, sync: str | None = None,
         "sucesso": sucesso,
         "focus": focus,
     })
+
+
+@router.post("/clientes/sincronizar-portal")
+def sincronizar_portal(request: Request):
+    """Cria no Portal do Cliente as empresas que faltam (só clientes ATIVOS).
+
+    `def` (não async): a chamada ao portal é bloqueante — o FastAPI roda no threadpool.
+    O portal não sobrescreve empresa existente; este botão só preenche o que falta.
+    """
+    if redir := auth.requer_login(request):
+        return redir
+
+    def _volta(msg: str):
+        return RedirectResponse(url=f"/clientes?sucesso={quote_plus(msg)}", status_code=303)
+
+    if not config.portal_configurado():
+        return _volta("❌ Portal não configurado — defina PORTAL_INGEST_URL e PORTAL_INGEST_KEY.")
+
+    ativos = [dict(c) for c in db.listar_clientes() if c["ativo"]]
+    out = portal.sincronizar_clientes(ativos)
+    if out is None:
+        return _volta("❌ Falha ao falar com o portal — veja os logs.")
+
+    partes = [f"✅ Portal sincronizado: {out['criadas']} empresa(s) criada(s), "
+              f"{out['existentes']} já existia(m)."]
+    if out.get("erros"):
+        partes.append(f"⚠ {out['erros']} com erro (CNPJ inválido ou sem razão social).")
+    partes.append("Empresas novas nascem só com as seções de entregas; "
+                  "o Departamento Pessoal você liga no painel do portal.")
+    return _volta(" ".join(partes))
 
 
 @router.post("/clientes/salvar")

@@ -31,8 +31,16 @@
     <button class="btn btn-danger" type="submit" name="sync" value="1" onclick="this.form.sobrescrever.value='1';return confirm('SOBRESCREVER vai pisar nas edições manuais (WhatsApp, responsável, email) com os dados do G-Click. Continuar?');">⚠ Forçar sobrescrita</button>
     <input type="hidden" name="sobrescrever" value="0">
   </form>
+  <form method="post" action="/clientes/sincronizar-portal" class="filtros no-print" style="margin-bottom:8px">
+    <button class="btn btn-secondary" type="submit"
+            onclick="return confirm('Criar no Portal do Cliente as empresas ATIVAS que ainda não existem lá?\n\nEmpresas já cadastradas no portal NÃO são alteradas. As novas nascem só com as seções de entregas (Guias, Folha, Documentos, Calendário) e senha = CNPJ.');">
+      🏛 Sincronizar com o Portal do Cliente
+    </button>
+  </form>
   <p style="font-size:13px;color:#666;margin:0 0 14px">
     💡 <strong>Fluxo recomendado:</strong> a sua equipe atualiza telefone/email no G-Click → você clica em <strong>"🔄 Sincronizar do G-Click"</strong> aqui e os dados vêm prontos. A sync padrão <strong>não sobrescreve</strong> o que você editou manualmente — só preenche o que está vazio.
+    <br>
+    🏛 <strong>Portal:</strong> a guia só é publicada no portal se a empresa existir lá. Depois de cadastrar clientes novos, clique em <strong>"Sincronizar com o Portal do Cliente"</strong> — ele cria só o que falta e nunca mexe no que já está lá.
   </p>
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">

@@ -553,18 +553,24 @@ def lote_set_atual(idx: int, cliente: str, arquivo: str) -> None:
         _lote_state["atual_arquivo"] = arquivo or ""
 
 
-def lote_marcar_resultado(status: str, mensagem: str | None = None) -> None:
-    """Conta o resultado da guia atual e (opcional) registra mensagem amigável."""
+def lote_marcar_resultado(status: str, mensagem: str | None = None,
+                          quantos: int = 1) -> None:
+    """Conta o resultado e (opcional) registra mensagem amigável.
+
+    `quantos` > 1 quando um único aviso cobre várias guias (o WhatsApp manda uma
+    mensagem por cliente, mas o progresso conta guias) — assim o total bate com
+    o número de alvos do lote.
+    """
     with _lote_lock:
-        _lote_state["feitos"] += 1
+        _lote_state["feitos"] += quantos
         if status == "ok":
-            _lote_state["enviados"] += 1
+            _lote_state["enviados"] += quantos
             tipo = "ok"
         elif status in ("bloqueado", "token_invalido"):
-            _lote_state["bloqueados"] += 1
+            _lote_state["bloqueados"] += quantos
             tipo = "aviso"
         else:
-            _lote_state["falhas"] += 1
+            _lote_state["falhas"] += quantos
             tipo = "erro"
         if mensagem:
             _lote_state["mensagens"].append({
@@ -764,6 +770,42 @@ def mensagem_documento(g: dict) -> str:
         linhas.append(f"🗓 Vencimento: {venc}")
         linhas.append("")
     linhas.append("Sua guia está disponível. Toque no botão abaixo para abrir o documento.")
+    return "\n".join(linhas)
+
+
+def mensagem_portal(guias: list[dict], total_no_portal: int | None = None) -> str:
+    """Aviso consolidado: os documentos estão no portal (não vão mais anexados).
+
+    Uma mensagem por cliente, listando o que chegou. Lista longa é resumida para o
+    WhatsApp não virar um paredão de texto.
+    """
+    n = len(guias)
+    linhas = [
+        f"📄 *{n} novo{'s' if n > 1 else ''} documento{'s' if n > 1 else ''} no seu portal*",
+        "",
+    ]
+
+    LIMITE = 6
+    for g in guias[:LIMITE]:
+        tipo = titulo_documento(g)
+        comp = competencia_label(g.get("competencia") or "")
+        venc = fmt_data(g.get("data_vencimento"))
+        linha = f"• {tipo} — {comp}"
+        if venc:
+            linha += f" (vence {venc})"
+        linhas.append(linha)
+    if n > LIMITE:
+        linhas.append(f"• ...e mais {n - LIMITE}")
+
+    linhas.append("")
+    if total_no_portal and total_no_portal > n:
+        linhas.append(f"No portal você também encontra os documentos anteriores "
+                      f"({total_no_portal} no total) e o calendário de vencimentos.")
+    else:
+        linhas.append("No portal você acompanha os vencimentos e baixa os documentos "
+                      "quando precisar.")
+    linhas.append("")
+    linhas.append("Toque no botão abaixo para entrar.")
     return "\n".join(linhas)
 
 

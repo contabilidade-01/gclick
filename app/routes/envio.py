@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-import secrets
 import threading
 import time
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 
-from .. import auth, config, db, gclick, helpers, tipos as tipos_mod, uazapi
+from .. import auth, config, db, gclick, helpers, portal, tipos as tipos_mod, uazapi
 from ..templating import templates
 
 router = APIRouter()
@@ -100,13 +99,19 @@ def _processar_lote(alvos: list[dict],
                     whatsapp_map: dict[str, str],
                     cfg_envio: dict,
                     origem: str = "manual") -> None:
-    """Loop de envio executado em thread de fundo. Atualiza `helpers.lote_*`
-    a cada passo para a tela de progresso refletir."""
+    """Valida as guias e avisa cada cliente UMA vez, em thread de fundo.
+
+    O arquivo não vai mais pelo WhatsApp: quem hospeda é o Portal do Cliente, que
+    busca os documentos direto no G-Click. Aqui liberamos os documentos no portal e
+    mandamos um aviso consolidado por cliente. Atualiza `helpers.lote_*` para a tela
+    de progresso refletir.
+    """
     throttle_s = cfg_envio["throttle_s"]
     teto_hora = cfg_envio["max_por_hora"]
     delay_uazapi_ms = cfg_envio["delay_uazapi_ms"]
-    modo_envio = cfg_envio.get("modo_envio", "anexo")
     abortar_por_token = False
+    # cnpj -> {wpp, cliente, guias[]} — agrupa para mandar 1 mensagem por cliente.
+    por_cliente: dict[str, dict] = {}
 
     try:
         for idx, g in enumerate(alvos, start=1):
@@ -164,15 +169,6 @@ def _processar_lote(alvos: list[dict],
                     f"⚠ {cliente} — não aceita {codigo_tipo or 'tipo desconhecido'}")
                 continue
 
-            # 🛡 Camada 4: valida vencimento no PDF
-            pdf_bytes: bytes | None = None
-            venc_pdf_str: str | None = None
-            venc_gclick_str = (g.get("data_vencimento") or "")[:10]
-            tipo_row = db.get_tipo_por_codigo(codigo_tipo) if codigo_tipo else None
-            if tipo_row and tipo_row["tem_vencimento"]:
-                pdf_bytes, venc_pdf_str = helpers.validar_vencimento_no_pdf(g)
-
-            caption = helpers.legenda(g)
             if not config.uazapi_configurado():
                 db.registrar_envio(cnpj=cnpj, whatsapp=wpp,
                                    tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
@@ -182,99 +178,71 @@ def _processar_lote(alvos: list[dict],
                 helpers.lote_marcar_resultado("bloqueado", f"⚠ {cliente} — uazapi não configurada (simulado)")
                 continue
 
-            # Teto/hora
-            if not helpers.sob_teto_horario():
-                db.registrar_envio(cnpj=cnpj, whatsapp=wpp,
-                                   tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
-                                   arquivo_nome=g["arquivo_nome"], competencia=g["competencia"],
-                                   uazapi_message_id=None, status="bloqueado",
-                                   erro=f"Teto de {teto_hora} envios/hora atingido")
-                helpers.lote_marcar_resultado(
-                    "bloqueado",
-                    f"⚠ {cliente} — teto de {teto_hora}/h atingido")
-                continue
+            # Passou nas camadas: entra no aviso consolidado do cliente. O arquivo em
+            # si NÃO vai pelo WhatsApp — quem hospeda é o Portal do Cliente.
+            grupo = por_cliente.setdefault(cnpj, {"wpp": wpp, "cliente": cliente, "guias": []})
+            grupo["guias"].append(g)
 
-            try:
-                # Decide modo: anexo (PDF) ou link (texto com link curto clicável)
-                if modo_envio == "link":
-                    nome_arquivo = g["arquivo_nome"] or "Documento"
-                    # Link RASTREADO próprio (/g/{token}) quando há domínio público
-                    # (PUBLIC_BASE_URL). Vantagens: NUNCA expira (serve a cópia local)
-                    # e registra quem abriu/baixou, quando e de onde. Sem domínio
-                    # público (dev local), cai no link S3 cru do G-Click (expira
-                    # ~2h, sem rastreio) — degradação segura.
-                    if config.PUBLIC_BASE_URL:
-                        token = secrets.token_urlsafe(16)
-                        link = config.url_publica(f"/g/{token}")
-                    else:
-                        token = None
-                        link = g["arquivo_url"] or ""
-                    msg_texto = helpers.mensagem_documento(g)
-                    resp = helpers.enviar_botao_com_retry(
-                        numero=wpp, texto=msg_texto,
-                        botao_texto="📄 Abrir documento",
-                        url=link,
-                        footer="NESCON CONTABILIDADE",
-                        delay_ms=delay_uazapi_ms,
-                    )
-                    msg_id = (resp.get("messageid") or resp.get("id")
-                              or (resp.get("message", {}) or {}).get("id"))
-                    envio_id = db.registrar_envio(
-                        cnpj=cnpj, whatsapp=wpp,
-                        tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
-                        arquivo_nome=nome_arquivo, competencia=g["competencia"],
-                        uazapi_message_id=str(msg_id) if msg_id else None,
-                        status="ok", origem=origem,
-                    )
-                    if token:
-                        db.set_envio_token(envio_id, token)
-                    # Backup local do PDF — é o que o /g/{token}/ver vai servir
-                    # (permanente, nunca expira).
-                    helpers.baixar_pdf_local(
-                        envio_id, g["arquivo_url"] or "", nome_arquivo,
-                        bytes_ja_baixados=pdf_bytes,
-                    )
-                else:
-                    # Modo anexo: envia PDF diretamente
-                    resp = helpers.enviar_com_retry(
-                        numero=wpp, file_url=g["arquivo_url"],
-                        doc_name=g["arquivo_nome"] or "guia.pdf", caption=caption,
-                        delay_ms=delay_uazapi_ms,
-                    )
-                    msg_id = (resp.get("messageid") or resp.get("id")
-                              or (resp.get("message", {}) or {}).get("id"))
-                    envio_id = db.registrar_envio(
+        # ---- Fase 2: UM aviso por cliente (não mais uma mensagem por guia) ----
+        for cnpj, grupo in por_cliente.items():
+            if abortar_por_token:
+                break
+            wpp = grupo["wpp"]
+            cliente = grupo["cliente"]
+            guias = grupo["guias"]
+            helpers.lote_set_atual(0, cliente, f"{len(guias)} documento(s)")
+
+            def _registrar_todas(status: str, erro: str | None = None, msg_id=None) -> None:
+                for g in guias:
+                    db.registrar_envio(
                         cnpj=cnpj, whatsapp=wpp,
                         tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
                         arquivo_nome=g["arquivo_nome"], competencia=g["competencia"],
                         uazapi_message_id=str(msg_id) if msg_id else None,
-                        status="ok", origem=origem,
-                    )
-                    helpers.baixar_pdf_local(
-                        envio_id, g["arquivo_url"], g["arquivo_nome"] or "documento.pdf",
-                        bytes_ja_baixados=pdf_bytes,
+                        status=status, erro=erro, origem=origem,
                     )
 
-                if venc_pdf_str or venc_gclick_str:
-                    db.set_envio_vencimentos(envio_id, venc_pdf_str, venc_gclick_str)
-                helpers.lote_marcar_resultado("ok", f"✅ {cliente} — {arquivo} ({modo_envio})")
+            if not helpers.sob_teto_horario():
+                _registrar_todas("bloqueado", f"Teto de {teto_hora} envios/hora atingido")
+                helpers.lote_marcar_resultado(
+                    "bloqueado", f"⚠ {cliente} — teto de {teto_hora}/h atingido", quantos=len(guias))
+                continue
+
+            # Libera no portal ANTES de avisar — o portal sincroniza com o G-Click na
+            # hora, então o cliente nunca recebe aviso apontando para portal vazio.
+            liberacao = portal.liberar(cnpj, guias)
+            if not liberacao:
+                _registrar_todas("falha", "Portal indisponivel — nada liberado, aviso nao enviado")
+                helpers.lote_marcar_resultado(
+                    "falha", f"❌ {cliente} — portal indisponível (nada enviado)", quantos=len(guias))
+                continue
+
+            try:
+                msg_texto = helpers.mensagem_portal(
+                    guias, total_no_portal=liberacao.get("total_liberados"))
+                link = liberacao.get("portal_url") or config.PORTAL_URL_CLIENTE
+                resp = helpers.enviar_botao_com_retry(
+                    numero=wpp, texto=msg_texto,
+                    botao_texto="🔓 Abrir meu portal",
+                    url=link,
+                    footer="NESCON CONTABILIDADE",
+                    delay_ms=delay_uazapi_ms,
+                )
+                msg_id = (resp.get("messageid") or resp.get("id")
+                          or (resp.get("message", {}) or {}).get("id"))
+                _registrar_todas("ok", msg_id=msg_id)
+                helpers.lote_marcar_resultado(
+                    "ok", f"✅ {cliente} — avisado ({len(guias)} doc. no portal)", quantos=len(guias))
             except uazapi.UazapiTokenInvalido as e:
-                db.registrar_envio(cnpj=cnpj, whatsapp=wpp,
-                                   tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
-                                   arquivo_nome=g["arquivo_nome"], competencia=g["competencia"],
-                                   uazapi_message_id=None, status="token_invalido",
-                                   erro=str(e)[:500])
+                _registrar_todas("token_invalido", str(e)[:500])
                 helpers.lote_marcar_resultado(
                     "token_invalido",
-                    f"🔑 {cliente} — token uazapi inválido (lote interrompido)")
+                    f"🔑 {cliente} — token uazapi inválido (lote interrompido)", quantos=len(guias))
                 abortar_por_token = True
             except Exception as e:  # noqa: BLE001
-                db.registrar_envio(cnpj=cnpj, whatsapp=wpp,
-                                   tarefa_id=g["tarefa_id"], atividade_id=g["atividade_id"],
-                                   arquivo_nome=g["arquivo_nome"], competencia=g["competencia"],
-                                   uazapi_message_id=None, status="falha",
-                                   erro=str(e)[:500])
-                helpers.lote_marcar_resultado("falha", f"❌ {cliente} — {str(e)[:100]}")
+                _registrar_todas("falha", str(e)[:500])
+                helpers.lote_marcar_resultado(
+                    "falha", f"❌ {cliente} — {str(e)[:100]}", quantos=len(guias))
             finally:
                 helpers.marcar_envio_realizado()
                 if throttle_s > 0:
@@ -518,8 +486,6 @@ def reenviar(request: Request, envio_id: int = Form(...)):
     if tipo_row_re and tipo_row_re["tem_vencimento"]:
         _, venc_pdf_str = helpers.validar_vencimento_no_pdf(g)
 
-    caption = helpers.legenda(g)
-
     # Número de destino: SEMPRE o atual do cadastro do cliente (o usuário pode
     # ter corrigido o telefone depois do envio original — reenvio precisa pegar
     # a versão nova, não o número congelado no registro antigo). Fallback no
@@ -553,50 +519,42 @@ def reenviar(request: Request, envio_id: int = Form(...)):
 
     try:
         cfg = config.get_throttle_runtime()
-        modo_envio = cfg.get("modo_envio", "anexo")
         delay_ms = cfg["delay_uazapi_ms"]
-        if modo_envio == "link":
-            # Mesmo formato da fila: botão "Abrir documento" com link RASTREADO
-            # (/g/{token}) quando há domínio público; senão cai no S3 cru (dev).
-            msg_texto = helpers.mensagem_documento(g)
-            if config.PUBLIC_BASE_URL:
-                token = secrets.token_urlsafe(16)
-                link = config.url_publica(f"/g/{token}")
-            else:
-                token = None
-                link = file_url
-            resp = helpers.enviar_botao_com_retry(
-                numero=wpp, texto=msg_texto,
-                botao_texto="📄 Abrir documento",
-                url=link,
-                footer="NESCON CONTABILIDADE",
-                delay_ms=delay_ms,
-            )
-        else:
-            token = None
-            resp = helpers.enviar_com_retry(
-                numero=wpp, file_url=file_url,
-                doc_name=arquivo_nome, caption=caption,
-                delay_ms=delay_ms,
-            )
+
+        # Reenvio = reavisar. O documento já está no portal (a liberação é idempotente:
+        # se já foi liberado antes, só devolve os totais). Nada de PDF pelo WhatsApp.
+        liberacao = portal.liberar(cnpj, [g])
+        if not liberacao:
+            db.registrar_envio(cnpj=cnpj, whatsapp=wpp,
+                                tarefa_id=tarefa_id, atividade_id=atividade_id,
+                                arquivo_nome=arquivo_nome, competencia=competencia,
+                                uazapi_message_id=None, status="falha",
+                                erro="Reenvio abortado — portal indisponivel")
+            return RedirectResponse(
+                url="/auditoria?erro=Portal+indisponivel+%E2%80%94+reenvio+nao+realizado",
+                status_code=303)
+
+        msg_texto = helpers.mensagem_portal([g], total_no_portal=liberacao.get("total_liberados"))
+        link = liberacao.get("portal_url") or config.PORTAL_URL_CLIENTE
+        resp = helpers.enviar_botao_com_retry(
+            numero=wpp, texto=msg_texto,
+            botao_texto="🔓 Abrir meu portal",
+            url=link,
+            footer="NESCON CONTABILIDADE",
+            delay_ms=delay_ms,
+        )
         msg_id = (resp.get("messageid") or resp.get("id")
                   or (resp.get("message", {}) or {}).get("id"))
         novo_envio_id = db.registrar_envio(cnpj=cnpj, whatsapp=wpp,
                             tarefa_id=tarefa_id, atividade_id=atividade_id,
                             arquivo_nome=arquivo_nome, competencia=competencia,
                             uazapi_message_id=str(msg_id) if msg_id else None,
-                            status="ok", erro=f"Reenvio {modo_envio} ({fonte})")
-        # Backup local também no reenvio (se veio do G-Click; do local já está salvo).
-        # É o que o /g/{token}/ver vai servir (permanente).
-        if fonte == "G-Click":
-            helpers.baixar_pdf_local(novo_envio_id, file_url, arquivo_nome)
-        if token:
-            db.set_envio_token(novo_envio_id, token)
+                            status="ok", erro=f"Reaviso do portal ({fonte})")
         # Grava vencimentos auditados
         if venc_pdf_str or venc_gclick_str:
             db.set_envio_vencimentos(novo_envio_id, venc_pdf_str, venc_gclick_str)
         helpers.marcar_envio_realizado()
-        return RedirectResponse(url=f"/auditoria?sucesso=Reenviado+via+{fonte}",
+        return RedirectResponse(url="/auditoria?sucesso=Cliente+reavisado+do+portal",
                                 status_code=303)
     except uazapi.UazapiTokenInvalido as e:
         db.registrar_envio(cnpj=cnpj, whatsapp=wpp,

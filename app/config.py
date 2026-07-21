@@ -69,6 +69,30 @@ APP_PORT = int(_env("APP_PORT", "8000"))
 # VPS: setar ex. PUBLIC_BASE_URL=https://guias.gestaoempresa.com
 PUBLIC_BASE_URL = (_env("PUBLIC_BASE_URL") or "").rstrip("/")
 
+# Portal do Cliente. O portal busca os documentos sozinho na API do G-Click; este
+# sistema só LIBERA os documentos do cliente e manda o aviso por WhatsApp.
+# Ex.: PORTAL_INGEST_URL=https://app.gestaoempresa.com/api/fiscal
+PORTAL_INGEST_URL_ENV = (_env("PORTAL_INGEST_URL") or "").rstrip("/")
+PORTAL_INGEST_KEY_ENV = _env("PORTAL_INGEST_KEY")
+
+# Endereço do portal para o cliente (botão do WhatsApp). Normalmente o portal
+# devolve a URL na resposta da liberação; isto é a reserva.
+PORTAL_URL_CLIENTE = (_env("PORTAL_URL_CLIENTE") or "").rstrip("/")
+
+
+def portal_credentials() -> tuple[str, str]:
+    """Retorna (url, key) do ingest do Portal. SQLite tem prioridade, .env é fallback."""
+    from . import db
+    url = (db.get_config("portal_ingest_url", PORTAL_INGEST_URL_ENV) or "").rstrip("/")
+    key = db.get_config("portal_ingest_key", PORTAL_INGEST_KEY_ENV) or ""
+    return url, key
+
+
+def portal_configurado() -> bool:
+    url, key = portal_credentials()
+    return bool(url and key)
+
+
 # Anti-bloqueio do número no WhatsApp:
 # - throttle: pausa (segundos) entre dois envios reais consecutivos.
 # - teto/hora: máximo de envios reais por hora (janela deslizante em memória).
